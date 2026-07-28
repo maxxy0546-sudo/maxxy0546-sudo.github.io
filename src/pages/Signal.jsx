@@ -599,7 +599,8 @@ export default function Signal() {
   }
 
   return (
-    <div className="font-mono space-y-4 sm:space-y-6 px-3 sm:px-5 md:px-8 py-4 sm:py-5 max-w-4xl mx-auto">
+    <div className="font-mono min-h-screen pb-16" style={{ background: 'var(--scanner-bg)', color: 'var(--scanner-text)' }}>
+      <div className="space-y-4 sm:space-y-6 px-3 sm:px-5 md:px-8 py-4 sm:py-5 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -694,6 +695,7 @@ export default function Signal() {
           cost included. Live hit rates should converge toward these figures as sample grows.
         </div>
       )}
+      </div>
     </div>
   );
 }
