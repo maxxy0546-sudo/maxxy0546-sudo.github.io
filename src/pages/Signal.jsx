@@ -140,7 +140,7 @@ function HorizonStrip({ horizon }) {
     { label: 'L', value: horizon.long, hint: 'Long · 6-12m structure (z180/730)' },
   ];
   return (
-    <div className="flex items-center gap-1.5 mt-2">
+    <div className="flex items-center gap-1 mt-2 flex-wrap">
       <span className="text-[8px] font-semibold tracking-wider uppercase" style={{ color: 'var(--scanner-text3)' }}>Horizon</span>
       {items.map(it => {
         const stance = it.value?.stance || 'NEUTRAL';
@@ -183,23 +183,21 @@ function AssetCard({ symbol, name, verdict, confidence, drivers, horizon }) {
   }
 
   return (
-    <div className="rounded p-3" style={{ background: 'var(--scanner-bg1)', border: `1px solid ${color}33` }}>
+    <div className="rounded p-2 sm:p-3" style={{ background: 'var(--scanner-bg1)', border: `1px solid ${color}33` }}>
       <div className="flex items-center justify-between mb-2">
-        <div>
+        <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[13px] font-bold" style={{ color: 'var(--scanner-text)' }}>{symbol}</span>
-          <span className="text-[8px] ml-1.5" style={{ color: 'var(--scanner-text3)' }}>{name}</span>
+          <span className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>{name}</span>
         </div>
-        <div className="text-right">
-          <span
-            className="text-[14px] font-bold cursor-help"
-            style={{ color }}
-            title={verdictDescription(verdict)}
-          >
-            {icon} {verdict}
-          </span>
-        </div>
+        <span
+          className="text-[14px] font-bold cursor-help"
+          style={{ color }}
+          title={verdictDescription(verdict)}
+        >
+          {icon} {verdict}
+        </span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[10px] font-semibold" style={{ color: 'var(--scanner-text2)' }}>
           Confidence: {confidence}/10
         </span>
@@ -208,14 +206,17 @@ function AssetCard({ symbol, name, verdict, confidence, drivers, horizon }) {
           style={{ color: 'var(--scanner-text3)', textDecoration: 'underline dotted' }}
           onMouseEnter={() => setShowTooltip(true)}
           onMouseLeave={() => setShowTooltip(false)}
+          onClick={() => setShowTooltip(!showTooltip)}
         >(?)</span>
         {showTooltip && (
-          <div className="absolute z-50 p-2 rounded text-[9px] leading-relaxed" style={{
-            background: 'var(--scanner-bg2)', border: '1px solid var(--scanner-border2)',
-            color: 'var(--scanner-text2)', maxWidth: 220, marginTop: '20px',
-          }}>
-            {driverLines.map((line, i) => <div key={i}>{line}</div>)}
-            {driverLines.length === 0 && <div>No driver data</div>}
+          <div className="fixed inset-0 z-50" onClick={() => setShowTooltip(false)}>
+            <div className="absolute p-2 rounded text-[9px] leading-relaxed" style={{
+              background: 'var(--scanner-bg2)', border: '1px solid var(--scanner-border2)',
+              color: 'var(--scanner-text2)', maxWidth: 200, left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: '90vw',
+            }}>
+              {driverLines.map((line, i) => <div key={i}>{line}</div>)}
+              {driverLines.length === 0 && <div>No driver data</div>}
+            </div>
           </div>
         )}
       </div>
@@ -231,8 +232,8 @@ function CashAllocation({ verdict, suggestedPct, ultra6Gates, rationale }) {
   const icon = cashVerdictIcon(verdict);
   return (
     <div className="rounded p-4" style={{ background: 'var(--scanner-bg1)', border: `1px solid ${color}33` }}>
-      <div className="flex items-center justify-between mb-3">
-        <div>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <span
             className="text-[14px] font-bold cursor-help"
             style={{ color }}
@@ -244,13 +245,13 @@ function CashAllocation({ verdict, suggestedPct, ultra6Gates, rationale }) {
           >
             {icon} {verdict}
           </span>
-          <span className="text-[11px] ml-2" style={{ color: 'var(--scanner-text2)' }}>{suggestedPct}% cash</span>
+          <span className="text-[11px]" style={{ color: 'var(--scanner-text2)' }}>{suggestedPct}% cash</span>
         </div>
-        <div className="text-right">
+        <div className="flex items-center gap-2">
           <span className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--scanner-text3)' }}>Ultra6 Gates</span>
-          <div className="text-[14px] font-bold" style={{ color: ultra6Gates >= 4 ? 'var(--scanner-green)' : ultra6Gates >= 3 ? 'var(--scanner-text2)' : 'var(--scanner-accent)' }}>
+          <span className="text-[14px] font-bold" style={{ color: ultra6Gates >= 4 ? 'var(--scanner-green)' : ultra6Gates >= 3 ? 'var(--scanner-text2)' : 'var(--scanner-accent)' }}>
             {ultra6Gates}/6
-          </div>
+          </span>
         </div>
       </div>
       <div className="text-[9px]" style={{ color: 'var(--scanner-text3)' }}>{rationale}</div>
@@ -277,7 +278,7 @@ function SignalHistory({ history }) {
         Signal History · {history.length} days
       </SectionLabel>
       <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-        <table className="w-full border-collapse min-w-[400px]">
+        <table className="w-full border-collapse min-w-[400px] sm:min-w-0">
           <thead>
             <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
               {['Date', 'BTC', 'Majors', 'Cash', '5D Ret', 'Hit'].map(h => (
@@ -377,7 +378,7 @@ function SignalScoreboard({ history }) {
 
       <div className="rounded p-4" style={{ background: 'var(--scanner-bg1)', border: '1px solid var(--scanner-border2)' }}>
         {/* Top: counts summary */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <div>
             <div className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--scanner-text3)' }}>Total Signals</div>
             <div className="text-[20px] font-bold tabular-nums" style={{ color: 'var(--scanner-text)' }}>{stats.total}</div>
@@ -433,7 +434,7 @@ function SignalScoreboard({ history }) {
           ) : (
             <div className="text-[9px]" style={{ color: 'var(--scanner-text3)' }}>No signals yet</div>
           )}
-          <div className="flex items-center gap-3 mt-1 text-[8.5px]">
+          <div className="flex items-center gap-2 sm:gap-3 mt-1 text-[8.5px] flex-wrap">
             <span style={{ color: 'var(--scanner-green)' }}>● STRONG {stats.strongCount}</span>
             <span style={{ color: '#f5c842' }}>● WEAK {stats.weakCount}</span>
             <span style={{ color: 'var(--scanner-text3)' }}>● NEUTRAL {stats.neutralCount}</span>
@@ -530,10 +531,10 @@ function InterpretationGuide() {
         <div className="rounded overflow-hidden" style={{ border: '1px solid var(--scanner-border2)' }}>
           {rows.map(r => (
             <div key={r.verdict} className="p-3" style={{ background: 'var(--scanner-bg1)', borderBottom: '1px solid var(--scanner-border)' }}>
-              <div className="flex items-center gap-3 mb-1.5">
+              <div className="flex items-center gap-2 sm:gap-3 mb-1.5 flex-wrap">
                 <span className="text-[14px] font-bold" style={{ color: r.color }}>{r.icon} {r.verdict}</span>
                 <span className="text-[10px] font-semibold" style={{ color: 'var(--scanner-text2)' }}>{r.meaning}</span>
-                <span className="text-[9px] ml-auto" style={{ color: 'var(--scanner-text3)' }}>{r.action}</span>
+                <span className="text-[9px] sm:ml-auto" style={{ color: 'var(--scanner-text3)' }}>{r.action}</span>
               </div>
               <div className="text-[9px] leading-relaxed" style={{ color: 'var(--scanner-text3)' }}>{r.detail}</div>
             </div>
@@ -598,7 +599,7 @@ export default function Signal() {
   }
 
   return (
-    <div className="font-mono space-y-6 px-5 md:px-8 py-5 max-w-4xl mx-auto">
+    <div className="font-mono space-y-4 sm:space-y-6 px-3 sm:px-5 md:px-8 py-4 sm:py-5 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
