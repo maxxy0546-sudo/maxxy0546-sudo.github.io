@@ -13,6 +13,7 @@ import QuickViewBar from '@/components/board/QuickViewBar';
 import FreshnessBanner from '@/components/FreshnessBanner';
 import { runBoardAnalysis } from '@/lib/board/boardEngine';
 import { fetchTradMarketData, buildTradDataFromSnapshot } from '@/lib/board/traditionalMarkets';
+import { fetchAllTickers as fetchHyperliquidTickers } from '@/lib/scanner/sources/hyperliquid';
 import { getGloballyBlockedSources } from '@/lib/scanner/sourceResolver';
 
 // TradFi moved to position 1 (right after Daily) so cross-asset breadth
@@ -58,6 +59,12 @@ export default function Board() {
   const apiKeyChecked = useRef(false);
   const hasLoaded = useRef(false);
 
+  // Extreme OI — fetched independently of the board candle scan.
+  // Only needs Hyperliquid tickers (OI + funding) + snapshot market caps.
+  // This ensures the card populates for every user on page load, even if
+  // they never click Refresh to run the full board analysis.
+  const [extremeOI, setExtremeOI] = useState([]);
+
   // Fetch snapshot.json for signal_metrics + regime_history (macro quadrant)
   // These are server-side computed and available instantly from the snapshot.
   const [snapshotData, setSnapshotData] = useState(null);
@@ -69,6 +76,92 @@ export default function Board() {
       .then(d => setSnapshotData(d))
       .catch(() => {});
   }, []);
+
+  // ── Extreme OI: fetch independently of the board candle scan ──────────────
+  // Runs when snapshotData loads (provides market caps). Fetches Hyperliquid
+  // tickers (OI + funding) in a single bulk call. Computes OI/MC ratio for
+  // every asset and takes the top 5. Does NOT depend on runBoardAnalysis.
+  useEffect(() => {
+    if (!snapshotData) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Build market cap map from snapshot
+        const mcaps = {};
+        const cu = snapshotData?.crypto_universe;
+        if (cu) for (const [sym, c] of Object.entries(cu)) if (c.marketCap) mcaps[sym] = c.marketCap;
+        const cg = snapshotData?.coingecko_top;
+        if (cg) for (const [sym, c] of Object.entries(cg)) if (c.marketCap && !mcaps[sym]) mcaps[sym] = c.marketCap;
+
+        // Fetch Hyperliquid tickers (single bulk call, ~232 assets)
+        let hlTickers = null;
+        try {
+          hlTickers = await fetchHyperliquidTickers();
+        } catch (e) {
+          console.warn('[Board] Hyperliquid ticker fetch for Extreme OI failed:', e.message);
+        }
+
+        // If Hyperliquid failed, try OKX OI fallback
+        if (!hlTickers || hlTickers.size < 50) {
+          try {
+            const res = await fetch('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
+            if (res.ok) {
+              const d = await res.json();
+              if (d?.code === '0' && Array.isArray(d.data)) {
+                if (!(hlTickers instanceof Map)) hlTickers = new Map();
+                for (const item of d.data) {
+                  const parts = item.instId?.split('-');
+                  if (!parts || parts.length < 2) continue;
+                  const symbol = parts[0];
+                  if (!hlTickers.has(symbol)) {
+                    hlTickers.set(symbol, {
+                      openInterest: parseFloat(item.oiCcy || '0'),
+                      openInterestUsd: parseFloat(item.oiUsd || '0'),
+                      fundingRate: null,
+                    });
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('[Board] OKX OI fallback failed:', e.message);
+          }
+        }
+
+        if (cancelled) return;
+
+        // Compute OI/MC ratio for every asset that has both OI and market cap
+        const items = [];
+        for (const [symbol, hl] of hlTickers instanceof Map ? hlTickers : []) {
+          const oiUsd = hl?.openInterestUsd;
+          const mcap = mcaps[symbol];
+          if (oiUsd != null && oiUsd > 0 && mcap != null && mcap > 0) {
+            const funding = hl?.fundingRate ?? null;
+            const fundingAnn = funding != null ? funding * 3 * 365 * 100 : null;
+            items.push({
+              symbol,
+              name: mcaps[symbol] ? symbol : symbol,  // name from snapshot if available
+              oiUsd,
+              oiCoin: hl?.openInterest ?? null,
+              marketCap: mcap,
+              oiRatio: oiUsd / mcap,
+              funding,
+              fundingAnn,
+            });
+          }
+        }
+
+        // Sort by OI/MC ratio descending, take top 5
+        items.sort((a, b) => b.oiRatio - a.oiRatio);
+        if (!cancelled) setExtremeOI(items.slice(0, 5));
+      } catch (e) {
+        console.warn('[Board] Extreme OI computation failed:', e.message);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [snapshotData]);
 
   // Track which sources are geo-blocked in the user's region (e.g. Binance
   // returns HTTP 451 for US IPs). Display these as small chips so the user
@@ -311,8 +404,8 @@ export default function Board() {
         </div>
       )}
 
-      {/* Quick View Bar — 5 market summary metrics */}
-      {quickView && <QuickViewBar quickView={quickView} />}
+      {/* Quick View Bar — 5 market summary metrics (from board scan) + Extreme OI (independent fetch) */}
+      <QuickViewBar quickView={{ ...(quickView || {}), extremeOI }} />
 
       {/* Tab bar */}
       <div className="flex items-end gap-0 px-5 md:px-8 mt-4" style={{ borderBottom: '1px solid var(--scanner-border2)' }}>

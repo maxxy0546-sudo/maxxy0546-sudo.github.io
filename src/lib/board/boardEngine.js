@@ -1018,7 +1018,7 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
   const breadthSeries = buildBreadthSeries(rawResults);
 
   // Quick View (5 market summary metrics)
-  const quickView = { ...buildQuickView(rawResults, hlTickers), extremeOI: buildExtremeOI(rawResults, hlTickers, snapshotMarketCaps) };
+  const quickView = buildQuickView(rawResults, hlTickers);
 
   onProgress({ phase: 'complete', message: 'Done' });
 
