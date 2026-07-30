@@ -689,7 +689,7 @@ function buildQuickView(rawResults, hlTickers) {
   }).filter(t => t.ret1d != null && Math.abs(t.ret1d) > 0.03)  // >3% move
     .sort((a, b) => Math.abs(b.ret1d) - Math.abs(a.ret1d)).slice(0, 5);
 
-  return { strongest, pickingUp, crowded, washedOut, bigMoves, extremeOI };
+  return { strongest, pickingUp, crowded, washedOut, bigMoves };
 }
 
 function buildExtremeOI(rawResults, hlTickers, snapshotMarketCaps) {
@@ -977,10 +977,7 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
   const breadthSeries = buildBreadthSeries(rawResults);
 
   // Quick View (5 market summary metrics)
-  const quickView = buildQuickView(rawResults, hlTickers);
-
-  // Extreme OI (top 5 by OI/MC ratio) — needs snapshot market caps
-  const extremeOI = buildExtremeOI(rawResults, hlTickers, snapshotMarketCaps);
+  const quickView = { ...buildQuickView(rawResults, hlTickers), extremeOI: buildExtremeOI(rawResults, hlTickers, snapshotMarketCaps) };
 
   onProgress({ phase: 'complete', message: 'Done' });
 
@@ -1001,7 +998,6 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
     momentumScan,
     breadthSeries,
     quickView,
-    extremeOI,
     updatedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     assetCount: total,
   };
