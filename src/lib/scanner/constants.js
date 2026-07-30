@@ -28,5 +28,13 @@ export const STABLECOINS = new Set([
 export const WRAPPED = new Set([
   'WBTC','WETH','WBNB','WSOL','STETH','WSTETH','CBETH','RETH',
   'FRXETH','SFRXETH','WEETH','EZETH','RSETH','PXETH','WMATIC',
-  'WAVAX','WFTM','WONE','WKLAY','WROSE'
+  'WAVAX','WFTM','WONE','WKLAY','WROSE',
+  // Wrapped/staked BTC variants
+  'TBTC','WBTC.E','CBBTC','LBTC','BBTC','HBTC','PBTC','TBTCV2',
+  // Wrapped/staked ETH variants
+  'BETH','METH','LSETH','WSTETH','SWETH','ANKRETH','RETH2',
+  // Liquid staking derivatives (staked versions of assets)
+  'BNSOL','JITOSOL','MSOL','STSOL','JUPSOL','BBLSTSOL',
+  // Other tokenized/wrapped assets that shouldn't appear in scanner
+  'FIDD',
 ]);
