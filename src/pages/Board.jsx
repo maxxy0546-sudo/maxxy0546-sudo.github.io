@@ -61,6 +61,8 @@ export default function Board() {
   // Fetch snapshot.json for signal_metrics + regime_history (macro quadrant)
   // These are server-side computed and available instantly from the snapshot.
   const [snapshotData, setSnapshotData] = useState(null);
+  const snapshotRef = useRef(null);
+  snapshotRef.current = snapshotData;
   useEffect(() => {
     fetch('/snapshot.json')
       .then(r => r.ok ? r.json() : null)
@@ -168,15 +170,19 @@ export default function Board() {
       // engine can seed rawResults — assets not yet refreshed retain their
       // previous metrics instead of disappearing during the refresh.
       // Build market cap map from snapshot for Extreme OI normalization
+      // Use a ref to avoid stale closure — snapshotData may not be in the
+      // useCallback dependency array, but snapshotRef.current always has
+      // the latest value.
+      const snap = snapshotRef.current;
       const snapMcaps = {};
-      const cu = snapshotData?.crypto_universe;
+      const cu = snap?.crypto_universe;
       if (cu) {
         for (const [sym, c] of Object.entries(cu)) {
           if (c.marketCap) snapMcaps[sym] = c.marketCap;
         }
       }
       // Also check coingecko_top (top 100 with richer data)
-      const cg = snapshotData?.coingecko_top;
+      const cg = snap?.coingecko_top;
       if (cg) {
         for (const [sym, c] of Object.entries(cg)) {
           if (c.marketCap && !snapMcaps[sym]) snapMcaps[sym] = c.marketCap;
