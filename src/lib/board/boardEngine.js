@@ -710,17 +710,15 @@ function buildExtremeOI(rawResults, hlTickers, snapshotMarketCaps) {
     const fundingAnn = funding != null ? funding * 3 * 365 * 100 : null;
     const oiRatio = (oiUsd != null && oiUsd > 0 && mcap != null && mcap > 0)
       ? oiUsd / mcap
-      : 0;  // Use 0 instead of null so we always have 5 results
+      : null;
     return {
       symbol: r.asset.symbol, name: r.asset.name, theme: r.asset.theme,
-      oiUsd, oiCoin, marketCap: mcap,
-      oiRatio: oiRatio > 0 ? oiRatio : null,  // null for display if 0
+      oiUsd, oiCoin, marketCap: mcap, oiRatio,
       funding, fundingAnn, price: r.metrics.price, ret5d: r.metrics.ret5d,
     };
   })
-  // Only include assets that have market cap data (otherwise ratio is meaningless)
-  .filter(t => t.marketCap != null && t.marketCap > 0)
-  .sort((a, b) => (b.oiRatio ?? 0) - (a.oiRatio ?? 0))
+  // Sort by oiRatio descending (nulls sort to bottom)
+  .sort((a, b) => (b.oiRatio ?? -1) - (a.oiRatio ?? -1))
   .slice(0, 5);
   return items;
 }
