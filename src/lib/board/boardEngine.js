@@ -3,6 +3,7 @@
 
 import { fetchCandles, preloadExchange } from '../scanner/exchanges';
 import { fetchAllTickers as fetchHyperliquidTickers } from '../scanner/sources/hyperliquid';
+import { fetchWithTimeout } from '../scanner/fetchWithTimeout';
 import { CRYPTO_UNIVERSE, BENCHMARKS, ROTATION_PAIRS } from './cryptoUniverse';
 
 const TIMEFRAME = '1D';
@@ -695,6 +696,9 @@ function buildQuickView(rawResults, hlTickers) {
 function buildExtremeOI(rawResults, hlTickers, snapshotMarketCaps) {
   // EXTREME OI: assets with highest OI/MC ratio — crowded positioning relative
   // to market cap. Uses Hyperliquid OI (USD) divided by market cap from snapshot.
+  //
+  // Always returns top 5 by oiRatio (even if some have null OI — they sort to
+  // bottom with ratio=0). This ensures the card always has 5 entries.
   const hlMap = hlTickers instanceof Map ? hlTickers : null;
   const mcMap = snapshotMarketCaps || {};
   const items = rawResults.filter(r => r.metrics != null).map(r => {
@@ -706,15 +710,18 @@ function buildExtremeOI(rawResults, hlTickers, snapshotMarketCaps) {
     const fundingAnn = funding != null ? funding * 3 * 365 * 100 : null;
     const oiRatio = (oiUsd != null && oiUsd > 0 && mcap != null && mcap > 0)
       ? oiUsd / mcap
-      : null;
+      : 0;  // Use 0 instead of null so we always have 5 results
     return {
       symbol: r.asset.symbol, name: r.asset.name, theme: r.asset.theme,
-      oiUsd, oiCoin, marketCap: mcap, oiRatio,
+      oiUsd, oiCoin, marketCap: mcap,
+      oiRatio: oiRatio > 0 ? oiRatio : null,  // null for display if 0
       funding, fundingAnn, price: r.metrics.price, ret5d: r.metrics.ret5d,
     };
-  }).filter(t => t.oiRatio != null)
-    .sort((a, b) => b.oiRatio - a.oiRatio)
-    .slice(0, 5);
+  })
+  // Only include assets that have market cap data (otherwise ratio is meaningless)
+  .filter(t => t.marketCap != null && t.marketCap > 0)
+  .sort((a, b) => (b.oiRatio ?? 0) - (a.oiRatio ?? 0))
+  .slice(0, 5);
   return items;
 }
 
@@ -825,6 +832,42 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
     hlTickers = await fetchHyperliquidTickers();
   } catch (e) {
     console.warn('[boardEngine] Hyperliquid ticker fetch failed:', e.message);
+  }
+
+  // ── Fallback: fetch OKX OI if Hyperliquid failed or returned too few assets ──
+  // OKX has a batch open-interest endpoint that returns all SWAP instruments in one call.
+  // We merge OKX OI into hlTickers for any symbol Hyperliquid doesn't cover.
+  if (!hlTickers || hlTickers.size < 50) {
+    try {
+      const okxRes = await fetchWithTimeout('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
+      if (okxRes.ok) {
+        const okxData = await okxRes.json();
+        if (okxData?.code === '0' && Array.isArray(okxData.data)) {
+          if (!(hlTickers instanceof Map)) hlTickers = new Map();
+          let added = 0;
+          for (const item of okxData.data) {
+            // instId format: "BTC-USDT-SWAP" → symbol "BTC"
+            const parts = item.instId?.split('-');
+            if (!parts || parts.length < 2) continue;
+            const symbol = parts[0];
+            if (!hlTickers.has(symbol)) {
+              const oiUsd = parseFloat(item.oiUsd || '0');
+              const oiCoin = parseFloat(item.oiCcy || '0');
+              hlTickers.set(symbol, {
+                openInterest: oiCoin,
+                openInterestUsd: oiUsd,
+                fundingRate: null,  // OKX funding requires per-instrument call — not fetched here
+                price: null,
+              });
+              added++;
+            }
+          }
+          if (added > 0) console.info(`[boardEngine] OKX OI fallback added ${added} assets`);
+        }
+      }
+    } catch (e) {
+      console.warn('[boardEngine] OKX OI fallback failed:', e.message);
+    }
   }
 
   // Retry pass for failed assets
