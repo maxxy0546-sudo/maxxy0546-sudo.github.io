@@ -689,10 +689,36 @@ function buildQuickView(rawResults, hlTickers) {
   }).filter(t => t.ret1d != null && Math.abs(t.ret1d) > 0.03)  // >3% move
     .sort((a, b) => Math.abs(b.ret1d) - Math.abs(a.ret1d)).slice(0, 5);
 
-  return { strongest, pickingUp, crowded, washedOut, bigMoves };
+  return { strongest, pickingUp, crowded, washedOut, bigMoves, extremeOI };
 }
 
-export async function runBoardAnalysis(exchange, onProgress, existingData) {
+function buildExtremeOI(rawResults, hlTickers, snapshotMarketCaps) {
+  // EXTREME OI: assets with highest OI/MC ratio — crowded positioning relative
+  // to market cap. Uses Hyperliquid OI (USD) divided by market cap from snapshot.
+  const hlMap = hlTickers instanceof Map ? hlTickers : null;
+  const mcMap = snapshotMarketCaps || {};
+  const items = rawResults.filter(r => r.metrics != null).map(r => {
+    const hl = hlMap?.get(r.asset.symbol);
+    const oiUsd = hl?.openInterestUsd ?? null;
+    const oiCoin = hl?.openInterest ?? null;
+    const mcap = mcMap[r.asset.symbol] ?? null;
+    const funding = hl?.fundingRate ?? null;
+    const fundingAnn = funding != null ? funding * 3 * 365 * 100 : null;
+    const oiRatio = (oiUsd != null && oiUsd > 0 && mcap != null && mcap > 0)
+      ? oiUsd / mcap
+      : null;
+    return {
+      symbol: r.asset.symbol, name: r.asset.name, theme: r.asset.theme,
+      oiUsd, oiCoin, marketCap: mcap, oiRatio,
+      funding, fundingAnn, price: r.metrics.price, ret5d: r.metrics.ret5d,
+    };
+  }).filter(t => t.oiRatio != null)
+    .sort((a, b) => b.oiRatio - a.oiRatio)
+    .slice(0, 5);
+  return items;
+}
+
+export async function runBoardAnalysis(exchange, onProgress, existingData, snapshotMarketCaps) {
   onProgress({ phase: 'preloading', message: 'Loading exchange instruments…' });
   await preloadExchange(exchange);
 
@@ -953,6 +979,9 @@ export async function runBoardAnalysis(exchange, onProgress, existingData) {
   // Quick View (5 market summary metrics)
   const quickView = buildQuickView(rawResults, hlTickers);
 
+  // Extreme OI (top 5 by OI/MC ratio) — needs snapshot market caps
+  const extremeOI = buildExtremeOI(rawResults, hlTickers, snapshotMarketCaps);
+
   onProgress({ phase: 'complete', message: 'Done' });
 
   return {
@@ -972,6 +1001,7 @@ export async function runBoardAnalysis(exchange, onProgress, existingData) {
     momentumScan,
     breadthSeries,
     quickView,
+    extremeOI,
     updatedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     assetCount: total,
   };

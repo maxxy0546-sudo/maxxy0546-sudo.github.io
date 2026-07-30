@@ -996,7 +996,7 @@ async function fetchTradfiSnapshot() {
 // of their device/cache state. The client-side localStorage path remains as
 // a fallback for intraday updates (the server only runs 4× daily).
 
-async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _prevSnapshot) {
+async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _prevSnapshot, globalMetrics) {
   try {
     // Dynamically import the regime engine modules (ES modules)
     const regimeSignals = await import('../src/lib/regime/regimeSignals.js');
@@ -1066,6 +1066,8 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
       growthNowcast: Math.round(growthNowcast.nowcast * 10) / 10,
       inflationNowcast: Math.round(inflationNowcast.nowcast * 10) / 10,
       liquidityNowcast: Math.round(liquidityNowcast.nowcast * 10) / 10,
+      // BTC dominance from CMC global metrics (for 7D delta display on Board)
+      btcDominance: globalMetrics?.btcDominance ?? null,
       // Allocation data (server-side, unified)
       ultra6_score: ultra6.score,
       ultra6_on: ultra6.on,
@@ -1212,7 +1214,7 @@ async function main() {
   }
 
   // Compute regime history server-side (appends today's nowcast to a 90-day rolling array)
-  const regimeHistory = await computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _prevSnapshot);
+  const regimeHistory = await computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _prevSnapshot, globalMetrics);
 
   // If an ETF flow asset failed to fetch (Farside 403/timeout), fall back to
   // the previous snapshot's data for that asset. This prevents rows from

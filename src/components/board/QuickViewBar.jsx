@@ -58,7 +58,7 @@ function QuickCard({ title, subtitle, accentColor, items, renderItem }) {
 export default function QuickViewBar({ quickView }) {
   if (!quickView) return null;
 
-  const { strongest = [], pickingUp = [], crowded = [], washedOut = [], bigMoves = [] } = quickView;
+  const { strongest = [], pickingUp = [], crowded = [], washedOut = [], bigMoves = [], extremeOI = [] } = quickView;
 
   return (
     <div className="flex gap-2 px-5 md:px-8 py-3 flex-wrap" style={{
@@ -171,6 +171,36 @@ export default function QuickViewBar({ quickView }) {
               </span>
               <span className="text-[10px] font-semibold tabular-nums" style={{ color: retColor(t.ret1d) }}>
                 {fmtPct(t.ret1d)}
+              </span>
+            </div>
+          </div>
+        )}
+      />
+
+      {/* 6. Extreme OI — highest OI/MC ratio (crowded positioning) */}
+      <QuickCard
+        title="Extreme OI"
+        subtitle="Highest OI / Market Cap"
+        accentColor="var(--scanner-red)"
+        items={extremeOI}
+        renderItem={(t, i) => (
+          <div key={t.symbol} className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[8px] font-bold" style={{ color: 'var(--scanner-text3)' }}>#{i+1}</span>
+              <span className="text-[10px] font-bold" style={{ color: 'var(--scanner-text)' }}>{t.symbol}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {t.fundingAnn != null && (
+                <span className="text-[9px] tabular-nums" style={{ color: t.fundingAnn > 20 ? 'var(--scanner-red)' : 'var(--scanner-text3)' }}>
+                  {t.fundingAnn.toFixed(0)}%
+                </span>
+              )}
+              <span className="text-[10px] font-semibold tabular-nums" style={{
+                color: t.oiRatio >= 0.30 ? 'var(--scanner-red)' :
+                       t.oiRatio >= 0.15 ? 'var(--scanner-accent)' :
+                       'var(--scanner-text2)'
+              }}>
+                {(t.oiRatio * 100).toFixed(1)}%
               </span>
             </div>
           </div>

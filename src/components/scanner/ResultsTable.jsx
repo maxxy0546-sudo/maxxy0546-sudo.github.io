@@ -39,6 +39,16 @@ function fmtOI(v) {
   return '$' + v.toFixed(0);
 }
 
+// Format OI in coin terms (e.g. "33.0K BTC", "1.2M ETH")
+function fmtOICoin(v, symbol) {
+  if (v == null || !Number.isFinite(v) || v === 0) return '—';
+  const sym = symbol || '';
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B ' + sym;
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M ' + sym;
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K ' + sym;
+  return v.toFixed(0) + ' ' + sym;
+}
+
 function fmtRVol(v) {
   if (v == null || !Number.isFinite(v)) return '—';
   // rVol = ratio (1.0 = average). Display as "2.3x" or "0.8x"
@@ -248,7 +258,7 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
                   { key: 'marketCap', label: 'MCAP', right: true },
                   { key: 'fundingRate', label: 'FUND', right: true },
                   { key: 'openInterest', label: 'OI', right: true },
-                  { key: 'oiZ', label: 'OI Z', right: true },
+                  { key: 'oiRatio', label: 'OI/MC', right: true },
                   { key: 'pricePct', label: 'Δ Base', right: true },
                   { key: 'emaPct', label: 'Δ Spread', right: true },
                   { key: null, label: fastLabel, right: true },
@@ -452,29 +462,29 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
         </span>
       </td>
 
-      {/* OPEN INTEREST (Hyperliquid) */}
+      {/* OPEN INTEREST in coin terms (Hyperliquid) */}
       <td className="py-2 px-2.5 text-right">
         <span className="text-[11px] font-semibold tabular-nums" style={{ color: 'var(--scanner-text2)' }}>
-          {fmtOI(row.openInterest)}
+          {fmtOICoin(row.openInterestRaw, row.symbol)}
         </span>
       </td>
 
-      {/* OI Z-SCORE (cross-sectional z-score of OI across all scanned assets) */}
+      {/* OI/MC RATIO (OI in USD / MarketCap — normalized positioning intensity) */}
       <td className="py-2 px-2.5 text-right">
         <span
           className="text-[11px] font-semibold tabular-nums cursor-help"
           style={{
-            color: row.oiZ == null ? 'var(--scanner-text3)' :
-                   row.oiZ >= 2 ? 'var(--scanner-red)' :      // very crowded
-                   row.oiZ >= 1 ? 'var(--scanner-accent)' :   // elevated
-                   row.oiZ <= -1 ? 'var(--scanner-green)' :   // low positioning (potential fuel)
-                   'var(--scanner-text2)'
+            color: row.oiRatio == null ? 'var(--scanner-text3)' :
+                   row.oiRatio >= 0.30 ? 'var(--scanner-red)' :     // >30% of mcap in OI = extreme
+                   row.oiRatio >= 0.15 ? 'var(--scanner-accent)' :  // >15% = elevated
+                   row.oiRatio >= 0.05 ? 'var(--scanner-text2)' :   // 5-15% = normal
+                   'var(--scanner-text3)'                            // <5% = low
           }}
-          title={row.oiZ != null
-            ? `OI z-score: ${row.oiZ >= 0 ? '+' : ''}${row.oiZ.toFixed(2)}. Cross-sectional z-score of open interest vs all scanned assets. Z>+2 = very crowded (squeeze risk). Z<-1 = low positioning (potential fuel for moves).`
-            : 'OI z-score unavailable (only available on Hyperliquid exchange)'}
+          title={row.oiRatio != null
+            ? `OI/MC: ${(row.oiRatio * 100).toFixed(1)}% of market cap in open interest. High ratio = crowded positioning relative to asset size. >30% = extreme (squeeze risk). <5% = low positioning.`
+            : 'OI/MC unavailable (requires Hyperliquid OI + market cap data)'}
         >
-          {row.oiZ != null ? `${row.oiZ >= 0 ? '+' : ''}${row.oiZ.toFixed(2)}` : '—'}
+          {row.oiRatio != null ? `${(row.oiRatio * 100).toFixed(1)}%` : '—'}
         </span>
       </td>
 

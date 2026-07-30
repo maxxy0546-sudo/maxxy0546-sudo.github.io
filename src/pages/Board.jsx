@@ -167,7 +167,23 @@ export default function Board() {
       // Pass existing data (from sessionStorage or previous refresh) so the
       // engine can seed rawResults — assets not yet refreshed retain their
       // previous metrics instead of disappearing during the refresh.
-      const result = await runBoardAnalysis(exch, handleProgress, data);
+      // Build market cap map from snapshot for Extreme OI normalization
+      const snapMcaps = {};
+      const cu = snapshotData?.crypto_universe;
+      if (cu) {
+        for (const [sym, c] of Object.entries(cu)) {
+          if (c.marketCap) snapMcaps[sym] = c.marketCap;
+        }
+      }
+      // Also check coingecko_top (top 100 with richer data)
+      const cg = snapshotData?.coingecko_top;
+      if (cg) {
+        for (const [sym, c] of Object.entries(cg)) {
+          if (c.marketCap && !snapMcaps[sym]) snapMcaps[sym] = c.marketCap;
+        }
+      }
+
+      const result = await runBoardAnalysis(exch, handleProgress, data, snapMcaps);
       setData(result);
       // Kick off tradfi fetch in the background — don't await it
       runTradAnalysis();
@@ -257,6 +273,7 @@ export default function Board() {
         macroQuadrant={snapshotData?.regime_history?.[snapshotData.regime_history.length - 1]?.quadrant}
         tradRegime={tradData?.tradRegime}
         globalMetrics={snapshotData?.global_metrics}
+        regimeHistory={snapshotData?.regime_history}
       />
 
       {/* Snapshot freshness banner — alerts when Board header's signal/quadrant

@@ -178,11 +178,23 @@ function TradFiBreadthSpectrum({ tradRegime }) {
 /**
  * Compact signal overview showing all three perspectives.
  */
-function SignalOverview({ regime, signalMetrics, macroQuadrant, globalMetrics }) {
+function SignalOverview({ regime, signalMetrics, macroQuadrant, globalMetrics, regimeHistory }) {
   const btcVerdict = signalMetrics?.btc_stance?.verdict;
   const btcConfidence = signalMetrics?.btc_stance?.confidence;
   const quadrant = macroQuadrant || signalMetrics?.macro_quadrant;
   const btcDominance = globalMetrics?.btcDominance;
+
+  // Compute 7D BTC dominance delta from regime_history entries
+  // (btcDominance is stored daily starting from the refresh that deploys this code;
+  // entries before that will have null btcDominance, so delta shows "—" until 7d of data accumulates)
+  let btcDomDelta7d = null;
+  if (regimeHistory && regimeHistory.length >= 8) {
+    const today = regimeHistory[regimeHistory.length - 1];
+    const weekAgo = regimeHistory[regimeHistory.length - 8];
+    if (today?.btcDominance != null && weekAgo?.btcDominance != null) {
+      btcDomDelta7d = today.btcDominance - weekAgo.btcDominance;
+    }
+  }
 
   const macroColor = quadrant ? (REGIME_COLORS[quadrant] || 'var(--scanner-text3)') : 'var(--scanner-text3)';
 
@@ -235,26 +247,39 @@ function SignalOverview({ regime, signalMetrics, macroQuadrant, globalMetrics })
 
       <div className="w-px h-8 flex-shrink-0" style={{ background: 'var(--scanner-border2)' }} />
 
-      {/* BTC Dominance — from CMC global metrics (snapshot) */}
+      {/* BTC Dominance — from CMC global metrics (snapshot) + 7D delta from regime_history */}
       <div className="flex flex-col gap-0.5">
         <span className="text-[8px] font-semibold tracking-[0.12em] uppercase" style={{ color: 'var(--scanner-text3)' }}>
           BTC Dom
         </span>
-        <span
-          className="text-[11px] font-bold tabular-nums cursor-help"
-          style={{ color: btcDominance != null ? 'var(--scanner-accent)' : 'var(--scanner-text3)' }}
-          title={btcDominance != null
-            ? `BTC dominance: ${btcDominance.toFixed(1)}% of total crypto market cap (CMC). High dominance = BTC leading altcoins; low dominance = altcoin season.`
-            : 'BTC dominance unavailable — CMC global metrics not in snapshot'}
-        >
-          {btcDominance != null ? `${btcDominance.toFixed(1)}%` : '—'}
-        </span>
+        <div className="flex items-center gap-1">
+          <span
+            className="text-[11px] font-bold tabular-nums cursor-help"
+            style={{ color: btcDominance != null ? 'var(--scanner-accent)' : 'var(--scanner-text3)' }}
+            title={btcDominance != null
+              ? `BTC dominance: ${btcDominance.toFixed(1)}% of total crypto market cap (CMC). High dominance = BTC leading altcoins; low dominance = altcoin season.`
+              : 'BTC dominance unavailable — CMC global metrics not in snapshot'}
+          >
+            {btcDominance != null ? `${btcDominance.toFixed(1)}%` : '—'}
+          </span>
+          {btcDomDelta7d != null && (
+            <span
+              className="text-[9px] font-semibold tabular-nums"
+              style={{
+                color: btcDomDelta7d > 0 ? 'var(--scanner-green)' : btcDomDelta7d < 0 ? 'var(--scanner-red)' : 'var(--scanner-text3)'
+              }}
+              title={`7-day change: ${btcDomDelta7d >= 0 ? '+' : ''}${btcDomDelta7d.toFixed(1)}pp. Rising = BTC gaining share (risk-off rotation). Falling = altcoins gaining share (risk-on rotation).`}
+            >
+              {btcDomDelta7d >= 0 ? '▲' : '▼'} {Math.abs(btcDomDelta7d).toFixed(1)}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-export default function BoardHeader({ regime, regimeLabel, updatedAt, exchange, isLoading, onRefresh, signalMetrics, macroQuadrant, tradRegime, globalMetrics }) {
+export default function BoardHeader({ regime, regimeLabel, updatedAt, exchange, isLoading, onRefresh, signalMetrics, macroQuadrant, tradRegime, globalMetrics, regimeHistory }) {
   const pct20  = regime?.pctAbove20  ?? '—';
   const pct50  = regime?.pctAbove50  ?? '—';
   const pct200 = regime?.pctAbove200 ?? '—';
@@ -285,6 +310,7 @@ export default function BoardHeader({ regime, regimeLabel, updatedAt, exchange, 
             signalMetrics={signalMetrics}
             macroQuadrant={macroQuadrant}
             globalMetrics={globalMetrics}
+            regimeHistory={regimeHistory}
           />
 
           {/* Exchange + asset count */}
