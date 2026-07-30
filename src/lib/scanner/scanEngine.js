@@ -405,6 +405,37 @@ export async function runScan(settings, onProgress) {
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
+  // ── Compute cross-sectional OI z-score ──────────────────────────────────
+  // After all results are collected, compute z-score of openInterest (USD)
+  // across the cross-section of matched assets. This tells the user which
+  // coins have unusually high/low OI relative to other scanned coins.
+  //
+  // Note: This is a CROSS-SECTIONAL z-score (across coins at a point in time),
+  // not a TEMPORAL z-score (over the coin's own history). The TradingRiot
+  // material recommends temporal z-scores, but we don't have historical OI
+  // data from Hyperliquid (no historical OI endpoint). Cross-sectional is
+  // still useful for identifying crowded/empty positioning relative to the
+  // market. A temporal version would require fetching Binance openInterestHist
+  // per symbol (30-day limit, 500 symbols = too many API calls).
+  //
+  // OI is only available when exchange = 'hyperliquid' (from fetchAllTickers).
+  // For other exchanges, oiZ will be null.
+  const oiValues = results
+    .map(r => r.openInterest)
+    .filter(v => v != null && v > 0);
+  if (oiValues.length >= 10) {
+    const oiMean = oiValues.reduce((s, v) => s + v, 0) / oiValues.length;
+    const oiVariance = oiValues.reduce((s, v) => s + (v - oiMean) ** 2, 0) / oiValues.length;
+    const oiStd = Math.sqrt(oiVariance);
+    if (oiStd > 0) {
+      for (const r of results) {
+        r.oiZ = r.openInterest != null && r.openInterest > 0
+          ? (r.openInterest - oiMean) / oiStd
+          : null;
+      }
+    }
+  }
+
   onProgress({
     phase: 'complete',
     done: totalAssets,

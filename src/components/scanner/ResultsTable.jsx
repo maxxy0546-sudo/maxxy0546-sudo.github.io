@@ -232,7 +232,7 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
         <EmptyState isScanning={isScanning} hasScanned={hasScanned} />
       ) : (
         <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--scanner-border2)' }}>
-          <table className="w-full min-w-[1200px] border-collapse">
+          <table className="w-full min-w-[1300px] border-collapse">
             <thead>
               <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
                 {[
@@ -248,6 +248,7 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
                   { key: 'marketCap', label: 'MCAP', right: true },
                   { key: 'fundingRate', label: 'FUND', right: true },
                   { key: 'openInterest', label: 'OI', right: true },
+                  { key: 'oiZ', label: 'OI Z', right: true },
                   { key: 'pricePct', label: 'Δ Base', right: true },
                   { key: 'emaPct', label: 'Δ Spread', right: true },
                   { key: null, label: fastLabel, right: true },
@@ -455,6 +456,25 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
       <td className="py-2 px-2.5 text-right">
         <span className="text-[11px] font-semibold tabular-nums" style={{ color: 'var(--scanner-text2)' }}>
           {fmtOI(row.openInterest)}
+        </span>
+      </td>
+
+      {/* OI Z-SCORE (cross-sectional z-score of OI across all scanned assets) */}
+      <td className="py-2 px-2.5 text-right">
+        <span
+          className="text-[11px] font-semibold tabular-nums cursor-help"
+          style={{
+            color: row.oiZ == null ? 'var(--scanner-text3)' :
+                   row.oiZ >= 2 ? 'var(--scanner-red)' :      // very crowded
+                   row.oiZ >= 1 ? 'var(--scanner-accent)' :   // elevated
+                   row.oiZ <= -1 ? 'var(--scanner-green)' :   // low positioning (potential fuel)
+                   'var(--scanner-text2)'
+          }}
+          title={row.oiZ != null
+            ? `OI z-score: ${row.oiZ >= 0 ? '+' : ''}${row.oiZ.toFixed(2)}. Cross-sectional z-score of open interest vs all scanned assets. Z>+2 = very crowded (squeeze risk). Z<-1 = low positioning (potential fuel for moves).`
+            : 'OI z-score unavailable (only available on Hyperliquid exchange)'}
+        >
+          {row.oiZ != null ? `${row.oiZ >= 0 ? '+' : ''}${row.oiZ.toFixed(2)}` : '—'}
         </span>
       </td>
 
