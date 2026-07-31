@@ -42,8 +42,8 @@ function AssetTable({ items, columns }) {
       <table className="w-full border-collapse">
         <thead>
           <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-            {columns.map(c => (
-              <th key={c.label} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left" style={{ color: 'var(--scanner-text3)' }}>
+            {columns.map((c, ci) => (
+              <th key={c.label} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left" style={{ color: 'var(--scanner-text3)', ...(ci === 0 ? { position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' } : {}) }}>
                 {c.label}
               </th>
             ))}
@@ -55,8 +55,8 @@ function AssetTable({ items, columns }) {
               style={{ borderBottom: '1px solid var(--scanner-border)', animationDelay: `${i * 0.02}s` }}
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-              {columns.map(c => (
-                <td key={c.label} className="py-2.5 px-3">{c.render(item)}</td>
+              {columns.map((c, ci) => (
+                <td key={c.label} className="py-2.5 px-3" style={{ ...(ci === 0 ? { position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' } : {}) }}>{c.render(item)}</td>
               ))}
             </tr>
           ))}

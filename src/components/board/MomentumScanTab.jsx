@@ -41,8 +41,8 @@ function MomentumTable({ items, absKey, relKey, absLabel, relLabel }) {
       <table className="w-full border-collapse min-w-[1000px]">
         <thead>
           <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-            {['#', 'Ticker', 'Name', 'Subtheme', '1D', absKey, relKey, 'vs50MA', 'ATR Ext', 'Vol Ratio', 'Tier'].map(h => (
-              <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left" style={{ color: 'var(--scanner-text3)' }}>{h}</th>
+            {['#', 'Ticker', 'Name', 'Subtheme', '1D', absKey, relKey, 'vs50MA', 'ATR Ext', 'Vol Ratio', 'Tier'].map((h, hi) => (
+              <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left" style={{ color: 'var(--scanner-text3)', ...(hi === 1 ? { position: 'sticky', left: '32px', zIndex: 10, background: 'var(--scanner-bg2)' } : {}) }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -53,7 +53,7 @@ function MomentumTable({ items, absKey, relKey, absLabel, relLabel }) {
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               <td className="py-2.5 px-3 text-[10px]" style={{ color: 'var(--scanner-text3)' }}>{item.rank}</td>
-              <td className="py-2.5 px-3">
+              <td className="py-2.5 px-3" style={{ position: 'sticky', left: '32px', zIndex: 5, background: 'var(--scanner-bg1)' }}>
                 <span className="text-[12px] font-bold" style={{ color: 'var(--scanner-text)' }}>{item.symbol}</span>
               </td>
               <td className="py-2.5 px-3 text-[10px] max-w-[120px]">

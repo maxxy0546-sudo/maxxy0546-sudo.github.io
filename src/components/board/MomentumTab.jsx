@@ -86,8 +86,8 @@ export default function MomentumTab({ cleanMomentum }) {
         <table className="w-full border-collapse min-w-[900px]">
           <thead>
             <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-              {['Ticker', 'Name', 'Theme', 'RS 20D', '5D Ret', '20D Ret', '60D Ret', 'ATR Ext', 'Vol Ratio', 'vs50MA', 'Tier', ''].map(h => (
-                <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left" style={{ color: 'var(--scanner-text3)' }}>{h}</th>
+              {['Ticker', 'Name', 'Theme', 'RS 20D', '5D Ret', '20D Ret', '60D Ret', 'ATR Ext', 'Vol Ratio', 'vs50MA', 'Tier', ''].map((h, hi) => (
+                <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left" style={{ color: 'var(--scanner-text3)', ...(hi === 0 ? { position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' } : {}) }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -97,7 +97,7 @@ export default function MomentumTab({ cleanMomentum }) {
                 style={{ borderBottom: '1px solid var(--scanner-border)' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <td className="py-3 px-3">
+                <td className="py-3 px-3" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
                   <span className="text-[12px] font-bold" style={{ color: 'var(--scanner-text)' }}>{item.symbol}</span>
                 </td>
                 <td className="py-3 px-3 text-[10px]" style={{ color: 'var(--scanner-text3)', maxWidth: 120 }}>

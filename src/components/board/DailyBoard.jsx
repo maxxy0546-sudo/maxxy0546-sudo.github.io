@@ -54,8 +54,8 @@ function BenchmarkSnapshot({ benchmarks }) {
         <table className="w-full border-collapse min-w-[500px]">
           <thead>
             <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-              {['Asset', 'Subtheme', '1D', '5D', '20D', 'vs 50MA', 'ATR Ext'].map(h => (
-                <th key={h} className="text-[8.5px] font-semibold tracking-[0.12em] uppercase py-2 px-4 text-left" style={{ color: 'var(--scanner-text3)' }}>{h}</th>
+              {['Asset', 'Subtheme', '1D', '5D', '20D', 'vs 50MA', 'ATR Ext'].map((h, hi) => (
+                <th key={h} className="text-[8.5px] font-semibold tracking-[0.12em] uppercase py-2 px-4 text-left" style={{ color: 'var(--scanner-text3)', ...(hi === 0 ? { position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' } : {}) }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -64,7 +64,7 @@ function BenchmarkSnapshot({ benchmarks }) {
               <tr key={b.symbol} style={{ borderBottom: '1px solid var(--scanner-border)' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <td className="py-2.5 px-4">
+                <td className="py-2.5 px-4" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
                   <span className="text-[12px] font-bold" style={{ color: 'var(--scanner-text)' }}>{b.symbol}</span>
                 </td>
                 <td className="py-2.5 px-4 text-[9px]" style={{ color: 'var(--scanner-text3)' }}>{b.subtheme}</td>
