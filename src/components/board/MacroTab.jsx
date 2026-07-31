@@ -364,8 +364,8 @@ export default function MacroTab({ tradData, isLoading, snapshotLoading, onRefre
           <table className="w-full border-collapse min-w-[1100px]">
             <thead>
               <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-                {['Ticker', 'Name', 'Price', '14D', '1D', '5D', '20D', '60D', 'vs20MA', 'vs50MA', 'ATR', 'RSI', '52W%', 'RS/QQQ', 'Src', 'Cat'].map(h => (
-                  <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>{h}</th>
+                {['Ticker', 'Name', 'Price', '20D', '1D', '5D', '20D Ret', '60D', 'vs20MA', 'vs50MA', 'ATR', 'RSI', '52W%', 'RS/QQQ', 'Src', 'Cat'].map((h, hi) => (
+                  <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)', ...(hi <= 1 ? { position: 'sticky', left: hi === 0 ? 0 : '70px', zIndex: 10, background: 'var(--scanner-bg2)' } : {}) }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -375,17 +375,17 @@ export default function MacroTab({ tradData, isLoading, snapshotLoading, onRefre
                   style={{ borderBottom: '1px solid var(--scanner-border)' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <td className="py-2 px-2.5">
+                  <td className="py-2 px-2.5" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
                     <span className="text-[11px] font-bold" style={{ color: 'var(--scanner-text)' }}>{item.symbol}</span>
                   </td>
-                  <td className="py-2 px-2.5 text-[10px]" style={{ color: 'var(--scanner-text3)', maxWidth: 100 }}>
+                  <td className="py-2 px-2.5 text-[10px]" style={{ color: 'var(--scanner-text3)', maxWidth: 100, position: 'sticky', left: '70px', zIndex: 5, background: 'var(--scanner-bg1)' }}>
                     <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{item.name}</span>
                   </td>
                   <td className="py-2 px-2.5 text-[11px] font-semibold tabular-nums" style={{ color: 'var(--scanner-text)' }}>
                     {fmtPrice(item.price)}
                   </td>
                   <td className="py-2 px-2.5">
-                    <MiniSparkline data={item.sparkline?.slice(-14)} />
+                    <MiniSparkline data={item.sparkline?.slice(-20)} />
                   </td>
                   <td className="py-2 px-2.5"><span className="tabular-nums text-[10px] font-semibold" style={{ color: pctColor(item.ret1d) }}>{fmtPct(item.ret1d)}</span></td>
                   <td className="py-2 px-2.5"><span className="tabular-nums text-[10px] font-semibold" style={{ color: pctColor(item.ret5d) }}>{fmtPct(item.ret5d)}</span></td>

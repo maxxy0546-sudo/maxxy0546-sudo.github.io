@@ -271,6 +271,7 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
                     style={{
                       color: sortKey === col.key ? 'var(--scanner-accent)' : 'var(--scanner-text3)',
                       cursor: col.key ? 'pointer' : 'default',
+                      ...(i <= 1 ? { position: 'sticky', left: i === 0 ? 0 : '32px', zIndex: 10, background: 'var(--scanner-bg2)' } : {}),
                     }}
                     onClick={() => col.key && setSortKey(col.key)}
                   >
@@ -325,8 +326,8 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
       onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
     >
-      {/* Chart button — opens TradingView chart in side panel */}
-      <td className="py-2 px-1.5 text-center" style={{ width: '32px' }}>
+      {/* Chart button — opens TradingView chart in side panel (sticky left) */}
+      <td className="py-2 px-1.5 text-center" style={{ width: '32px', position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -373,8 +374,8 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
         </button>
       </td>
 
-      {/* Asset */}
-      <td className="py-2 px-2.5">
+      {/* Asset (sticky left, second column) */}
+      <td className="py-2 px-2.5" style={{ position: 'sticky', left: '32px', zIndex: 5, background: 'var(--scanner-bg1)' }}>
         <div className="text-[11px] font-bold leading-tight" style={{ color: 'var(--scanner-text)' }}>{row.symbol}</div>
         <div className="text-[9px] leading-tight max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap" style={{ color: 'var(--scanner-text3)' }}>{row.name}</div>
         {row.platform && (

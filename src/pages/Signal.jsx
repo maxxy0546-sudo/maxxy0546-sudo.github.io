@@ -281,15 +281,15 @@ function SignalHistory({ history }) {
         <table className="w-full border-collapse min-w-[400px] sm:min-w-0">
           <thead>
             <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-              {['Date', 'BTC', 'Majors', 'Cash', '5D Ret', 'Hit'].map(h => (
-                <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-3 text-left" style={{ color: 'var(--scanner-text3)' }}>{h}</th>
+              {['Date', 'BTC', 'Majors', 'Cash', '5D Ret', 'Hit'].map((h, hi) => (
+                <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-3 text-left" style={{ color: 'var(--scanner-text3)', ...(hi === 0 ? { position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' } : {}) }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {recent.map((h, i) => (
               <tr key={i} style={{ borderBottom: '1px solid var(--scanner-border)' }}>
-                <td className="py-2 px-3 text-[10px]" style={{ color: 'var(--scanner-text2)' }}>{h.date}</td>
+                <td className="py-2 px-3 text-[10px]" style={{ color: 'var(--scanner-text2)', position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>{h.date}</td>
                 <td className="py-2 px-3 text-[10px] font-semibold" style={{ color: verdictColor(h.btc_verdict) }}>{h.btc_verdict}</td>
                 <td className="py-2 px-3 text-[10px]" style={{ color: 'var(--scanner-text2)' }}>{h.majors_strong_count ?? '—'}</td>
                 <td className="py-2 px-3 text-[10px]" style={{ color: 'var(--scanner-text2)' }}>{h.cash_pct}%</td>
