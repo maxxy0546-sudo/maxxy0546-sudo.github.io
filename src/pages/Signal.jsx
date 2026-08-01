@@ -312,13 +312,15 @@ function SignalHistory({ history }) {
  * Signal Scoreboard — aggregates signal_history into running hit-rate stats.
  *
  * Stats shown:
- *   - Total signals / resolved / pending
+ *   - Total signals / resolved / pending (resolved includes NEUTRAL)
  *   - STRONG hit rate (resolved STRONG signals where 5d return > 0)
  *   - WEAK hit rate (resolved WEAK signals where 5d return < 0)
+ *   - Cash Alpha vs 40% baseline (how much cash% decisions helped/hurt)
  *   - Verdict distribution (count of STRONG / WEAK / NEUTRAL)
  *
- * Significance bar: 30 resolved signals. Below that, stats are shown but
- * flagged as "low sample" to avoid false confidence.
+ * Significance bar: 30 DIRECTIONAL (STRONG + WEAK) resolved signals. NEUTRAL
+ * resolved signals don't count toward significance because they have no
+ * directional call to hit or miss — they're correctly silent.
  */
 function SignalScoreboard({ history }) {
   const stats = useMemo(() => {
@@ -328,7 +330,17 @@ function SignalScoreboard({ history }) {
     let strongCount = 0, weakCount = 0, neutralCount = 0;
     let strongResolved = 0, strongHits = 0;
     let weakResolved = 0, weakHits = 0;
+    let neutralResolved = 0;
     let pending = 0;
+
+    // Cash alpha: compares actual cash% to a constant 40% baseline.
+    // For each resolved signal: alpha = (baseline_cash - signal_cash) * btc_5d_return
+    //   signal raised cash (cash% > 40) + BTC fell → positive alpha (avoided losses)
+    //   signal raised cash + BTC rose → negative alpha (gave up gains)
+    //   signal at baseline (40%) → zero alpha
+    const BASELINE_CASH_FRAC = 0.40;
+    let cashAlpha = 0;
+    let cashAlphaSignals = 0;
 
     for (const h of history) {
       if (h.btc_verdict === 'STRONG') strongCount++;
@@ -340,49 +352,68 @@ function SignalScoreboard({ history }) {
         continue;
       }
 
+      // Resolved (5d elapsed)
       if (h.btc_verdict === 'STRONG') {
         strongResolved++;
         if (h.btc_5d_hit) strongHits++;
       } else if (h.btc_verdict === 'WEAK') {
         weakResolved++;
         if (h.btc_5d_hit) weakHits++;
+      } else {
+        neutralResolved++;
+      }
+
+      // Cash alpha contribution (only for signals with 5d return + cash% data)
+      if (h.btc_5d_return != null && h.cash_pct != null) {
+        const signalCashFrac = h.cash_pct / 100;
+        cashAlpha += (BASELINE_CASH_FRAC - signalCashFrac) * h.btc_5d_return;
+        cashAlphaSignals++;
       }
     }
 
-    const resolved = strongResolved + weakResolved;
+    const resolved = strongResolved + weakResolved + neutralResolved;
+    const directionalResolved = strongResolved + weakResolved;
     const strongHitRate = strongResolved > 0 ? (strongHits / strongResolved) * 100 : null;
     const weakHitRate = weakResolved > 0 ? (weakHits / weakResolved) * 100 : null;
 
     return {
       total, resolved, pending,
+      directionalResolved,
       strongCount, weakCount, neutralCount,
       strongResolved, strongHits, strongHitRate,
       weakResolved, weakHits, weakHitRate,
+      neutralResolved,
+      cashAlpha, cashAlphaSignals,
     };
   }, [history]);
 
   if (!stats) return null;
 
-  const lowSample = stats.resolved < 30;
-  const significant = stats.resolved >= 30;
+  const lowSample = stats.directionalResolved < 30;
+  const significant = stats.directionalResolved >= 30;
 
   return (
     <div>
       <SectionLabel right={
         <span className="text-[8px]" style={{ color: lowSample ? 'var(--scanner-text3)' : 'var(--scanner-green)' }}>
-          {significant ? '✓ ≥30 resolved' : `${stats.resolved}/30 resolved`}
+          {significant ? '✓ ≥30 directional' : `${stats.directionalResolved}/30 directional`}
         </span>
       }>
         Signal Scoreboard · live accuracy tracker
       </SectionLabel>
 
       <div className="rounded p-4" style={{ background: 'var(--scanner-bg1)', border: '1px solid var(--scanner-border2)' }}>
-        {/* Top: counts summary */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        {/* Top: counts summary — 4 columns on desktop, 2 on mobile */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <div>
             <div className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--scanner-text3)' }}>Total Signals</div>
             <div className="text-[20px] font-bold tabular-nums" style={{ color: 'var(--scanner-text)' }}>{stats.total}</div>
-            <div className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>{stats.resolved} resolved · {stats.pending} pending</div>
+            <div className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>
+              {stats.resolved} resolved · {stats.pending} pending
+              {stats.neutralResolved > 0 && (
+                <span title="NEUTRAL resolved signals have no directional call to hit or miss — they're correctly silent.">{' '}(incl. {stats.neutralResolved} NEUTRAL)</span>
+              )}
+            </div>
           </div>
           <div>
             <div className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--scanner-text3)' }}>STRONG Hit Rate</div>
@@ -393,7 +424,11 @@ function SignalScoreboard({ history }) {
             }}>
               {stats.strongHitRate != null ? `${stats.strongHitRate.toFixed(1)}%` : '—'}
             </div>
-            <div className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>{stats.strongResolved} resolved · {stats.strongHits} hits</div>
+            <div className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>
+              {stats.strongResolved > 0
+                ? `${stats.strongResolved} resolved · ${stats.strongHits} hits`
+                : '0 resolved (no STRONG signals yet)'}
+            </div>
           </div>
           <div>
             <div className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--scanner-text3)' }}>WEAK Hit Rate</div>
@@ -404,7 +439,30 @@ function SignalScoreboard({ history }) {
             }}>
               {stats.weakHitRate != null ? `${stats.weakHitRate.toFixed(1)}%` : '—'}
             </div>
-            <div className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>{stats.weakResolved} resolved · {stats.weakHits} hits</div>
+            <div className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>
+              {stats.weakResolved > 0
+                ? `${stats.weakResolved} resolved · ${stats.weakHits} hits`
+                : '0 resolved (no WEAK signals yet)'}
+            </div>
+          </div>
+          <div>
+            <div className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--scanner-text3)' }}>
+              Cash Alpha <span style={{ opacity: 0.6 }}>vs 40% hold</span>
+            </div>
+            <div className="text-[20px] font-bold tabular-nums" style={{
+              color: stats.cashAlpha > 0.01 ? 'var(--scanner-green)'
+                   : stats.cashAlpha < -0.01 ? 'var(--scanner-red)'
+                   : 'var(--scanner-text3)'
+            }}>
+              {stats.cashAlphaSignals > 0
+                ? `${stats.cashAlpha >= 0 ? '+' : ''}${stats.cashAlpha.toFixed(2)}%`
+                : '—'}
+            </div>
+            <div className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>
+              {stats.cashAlphaSignals > 0
+                ? `${stats.cashAlphaSignals} signals · positive = cash calls helped`
+                : 'awaiting resolved signals'}
+            </div>
           </div>
         </div>
 
@@ -449,9 +507,11 @@ function SignalScoreboard({ history }) {
             color: 'var(--scanner-text3)',
           }}>
             <strong style={{ color: 'var(--scanner-text2)' }}>Collecting data:</strong>{' '}
-            {stats.resolved} of 30 resolved signals needed for statistically meaningful hit rates.
-            Currently accumulating ~1 signal/day. Expected to reach significance in{' '}
-            {Math.max(1, 30 - stats.resolved)} days. Walk-forward backtest reference:{' '}
+            {stats.directionalResolved} of 30 directional (STRONG + WEAK) resolved signals needed for
+            statistically meaningful hit rates. NEUTRAL resolved signals ({stats.neutralResolved}) are
+            correctly silent — they have no directional call to hit or miss, so they don't count toward
+            significance. Currently accumulating ~1 signal/day in trending markets (zero in chop).
+            Walk-forward backtest reference:{' '}
             <span style={{ color: 'var(--scanner-text2)' }}>OOS STRONG 54.5% · WEAK 41.6%</span>{' '}
             (1444 signals, 2024-07 to 2025-07).
           </div>
