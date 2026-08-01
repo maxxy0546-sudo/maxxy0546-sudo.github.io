@@ -19,7 +19,9 @@
  *   343 STRONG); selecting only high-confidence WEAK (stance=DEFENSIVE, conf≥6)
  *   would yield far fewer signals but is left for future work.
  *
- *   What is RED now? Only realized 5-day-return misses (✗ in history table).
+ *   What is RED now? Only realized directional misses (✗ in history table) —
+ *   i.e. STRONG signals where BTC fell, or WEAK signals where BTC rose.
+ *   NEUTRAL resolved signals show '·' (gray, no call made — correctly silent).
  *   Forward-looking verdicts use amber for WEAK to communicate caution, not
  *   failure.
  *
@@ -57,8 +59,9 @@ function fmtPrice(p) {
  *   WEAK    → amber  (◈)     — defensive, raise cash (NOT a failure)
  *   NEUTRAL → gray   (▬)     — insufficient signal, hold
  *
- * WEAK is intentionally NOT red. Red is reserved for realized misses in the
- * history table — a different semantic (backward-looking vs forward-looking).
+ * WEAK is intentionally NOT red. Red is reserved for realized directional
+ * misses (✗) in the history table — STRONG calls where BTC fell, or WEAK
+ * calls where BTC rose. NEUTRAL resolved signals show '·' (gray, no call).
  */
 function verdictColor(v) {
   if (v === 'STRONG') return 'var(--scanner-green)';
@@ -282,7 +285,11 @@ function SignalHistory({ history }) {
           <thead>
             <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
               {['Date', 'BTC', 'Majors', 'Cash', '5D Ret', 'Hit'].map((h, hi) => (
-                <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-3 text-left" style={{ color: 'var(--scanner-text3)', ...(hi === 0 ? { position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' } : {}) }}>{h}</th>
+                <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-3 text-left" style={{ color: 'var(--scanner-text3)', ...(hi === 0 ? { position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' } : {}) }}>
+                  {h === 'Hit' ? (
+                    <span title="✓ = directional call was correct · ✗ = directional call was wrong · · = NEUTRAL resolved (no call made, correctly silent) · — = pending (5d not elapsed)">Hit ℹ</span>
+                  ) : h}
+                </th>
               ))}
             </tr>
           </thead>
@@ -296,8 +303,20 @@ function SignalHistory({ history }) {
                 <td className="py-2 px-3 text-[10px] tabular-nums" style={{ color: h.btc_5d_return != null ? (h.btc_5d_return >= 0 ? 'var(--scanner-green)' : 'var(--scanner-red)') : 'var(--scanner-text3)' }}>
                   {h.btc_5d_return != null ? `${h.btc_5d_return > 0 ? '+' : ''}${h.btc_5d_return.toFixed(2)}%` : '—'}
                 </td>
-                <td className="py-2 px-3 text-[10px]" style={{ color: h.btc_5d_hit === true ? 'var(--scanner-green)' : h.btc_5d_hit === false ? 'var(--scanner-red)' : 'var(--scanner-text3)' }}>
-                  {h.btc_5d_hit === true ? '✓' : h.btc_5d_hit === false ? '✗' : '—'}
+                <td className="py-2 px-3 text-[10px]" style={{
+                  color: h.btc_5d_hit === true ? 'var(--scanner-green)'
+                       : h.btc_5d_hit === false && h.btc_verdict !== 'NEUTRAL' ? 'var(--scanner-red)'
+                       : 'var(--scanner-text3)'
+                }} title={
+                  h.btc_5d_hit === true ? 'Directional call was correct'
+                  : h.btc_5d_hit === false && h.btc_verdict !== 'NEUTRAL' ? 'Directional call was wrong'
+                  : h.btc_5d_hit === false && h.btc_verdict === 'NEUTRAL' ? 'No directional call made — NEUTRAL is correctly silent, cannot hit or miss'
+                  : 'Pending — 5d return not yet available'
+                }>
+                  {h.btc_5d_hit === true ? '✓'
+                   : h.btc_5d_hit === false && h.btc_verdict !== 'NEUTRAL' ? '✗'
+                   : h.btc_5d_hit === false && h.btc_verdict === 'NEUTRAL' ? '·'
+                   : '—'}
                 </td>
               </tr>
             ))}
@@ -602,7 +621,7 @@ function InterpretationGuide() {
           <div className="p-2 text-[8.5px]" style={{ background: 'var(--scanner-bg2)', color: 'var(--scanner-text3)' }}>
             <strong style={{ color: 'var(--scanner-text2)' }}>About the colors:</strong>{' '}
             Green = constructive. Amber = defensive (caution, not failure). Gray = neutral.
-            Red is reserved for backward-looking realized misses (✗ in history) — never for forward-looking verdicts.
+            Red is reserved for realized directional misses (✗ in history) — STRONG calls where BTC fell, or WEAK calls where BTC rose. NEUTRAL resolved signals show '·' (no call made).
           </div>
         </div>
       )}
