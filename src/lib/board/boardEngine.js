@@ -1047,8 +1047,6 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
   // Includes metrics + OI/funding from Hyperliquid + market cap from snapshot
   const hlMap = hlTickers instanceof Map ? hlTickers : null;
   const mcMap = snapshotMarketCaps || {};
-  const btcResult = rawResults.find(r => r.asset.symbol === 'BTC');
-  const btcRet20d = btcResult?.metrics?.ret20d ?? null;
   const cryptoAssets = rawResults
     .filter(r => r.metrics != null)
     .map(r => {
@@ -1058,7 +1056,6 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
       const oiRatio = (oiUsd != null && oiUsd > 0 && mcap != null && mcap > 0) ? oiUsd / mcap : null;
       const funding = hl?.fundingRate ?? null;
       const fundingAnn = funding != null ? funding * 3 * 365 * 100 : null;
-      const rs_btc_20d = (r.metrics.ret20d != null && btcRet20d != null) ? r.metrics.ret20d - btcRet20d : null;
       return {
         symbol: r.asset.symbol,
         name: r.asset.name,
@@ -1074,7 +1071,7 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
         atrExt50ma: r.metrics.atrExt50ma,
         volRatio: r.metrics.volRatio,
         rsi14: r.metrics.rsi14,
-        rs_btc_20d,
+        rs_btc_20d: r.metrics.rs_btc_20d ?? null,
         oiRatio,
         fundingAnn,
       };
