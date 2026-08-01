@@ -99,12 +99,12 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
           onChange={e => update('exchange', e.target.value)}
         >
           <option value="hyperliquid"    style={{ background: 'var(--scanner-bg2)' }}>Hyperliquid (Default)</option>
-          <option value="okx_perps"      style={{ background: 'var(--scanner-bg2)' }}>OKX Perps</option>
+          <option value="okx_perps"      style={{ background: 'var(--scanner-bg2)' }}>OKX Perps (widest no-VPN coverage)</option>
           <option value="okx"            style={{ background: 'var(--scanner-bg2)' }}>OKX (Spot)</option>
           <option value="binance_perps"  style={{ background: 'var(--scanner-bg2)' }}>Binance Perps ⚠ VPN</option>
           <option value="binance"        style={{ background: 'var(--scanner-bg2)' }}>Binance Spot ⚠ VPN</option>
           <option value="kraken"         style={{ background: 'var(--scanner-bg2)' }}>Kraken</option>
-          <option value="bybit"          style={{ background: 'var(--scanner-bg2)' }}>Bybit</option>
+          <option value="bybit"          style={{ background: 'var(--scanner-bg2)' }}>Bybit ⚠ VPN for funding</option>
           <option value="coingecko"      style={{ background: 'var(--scanner-bg2)' }}>CoinGecko (Daily)</option>
         </select>
       </div>
