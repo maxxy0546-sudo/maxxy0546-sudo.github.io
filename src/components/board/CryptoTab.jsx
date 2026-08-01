@@ -85,15 +85,19 @@ export default function CryptoTab({ cryptoAssets }) {
   const [sortKey, setSortKey] = useState('ret20d');
   const [sortDir, setSortDir] = useState('desc');
   const [selectedSymbol, setSelectedSymbol] = useState(null);
+  const [search, setSearch] = useState('');
 
   const sorted = useMemo(() => {
     if (!cryptoAssets) return [];
-    return [...cryptoAssets].sort((a, b) => {
+    const filtered = search
+      ? cryptoAssets.filter(a => `${a.symbol} ${a.name}`.toLowerCase().includes(search.toLowerCase()))
+      : cryptoAssets;
+    return [...filtered].sort((a, b) => {
       const av = a[sortKey] ?? -Infinity;
       const bv = b[sortKey] ?? -Infinity;
       return sortDir === 'desc' ? bv - av : av - bv;
     });
-  }, [cryptoAssets, sortKey, sortDir]);
+  }, [cryptoAssets, sortKey, sortDir, search]);
 
   const headers = [
     { key: null, label: '' },
@@ -127,8 +131,24 @@ export default function CryptoTab({ cryptoAssets }) {
   return (
     <div className="font-mono">
       <div className="px-5 md:px-8 py-4">
-        <div className="text-[10px] mb-2" style={{ color: 'var(--scanner-text3)' }}>
-          {sorted.length} assets · sorted by {sortKey} {sortDir} · OI/MC from Hyperliquid + OKX fallback + CMC market cap
+        <div className="flex items-center gap-3 mb-3 flex-wrap">
+          <span className="text-[9px] font-bold tracking-[0.12em] uppercase" style={{ color: 'var(--scanner-text3)' }}>
+            Crypto Universe · {sorted.length} assets
+          </span>
+          <input
+            type="text"
+            placeholder="Search ticker or name…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="font-mono text-[10px] px-2 py-1 outline-none ml-auto"
+            style={{
+              background: 'var(--scanner-bg2)',
+              border: '1px solid var(--scanner-border2)',
+              color: 'var(--scanner-text)',
+              borderRadius: '4px',
+              width: '180px',
+            }}
+          />
         </div>
         <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
           <table className="w-full border-collapse min-w-[1400px]">
