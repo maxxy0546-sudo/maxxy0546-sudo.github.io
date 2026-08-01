@@ -221,6 +221,9 @@ async function fetchGateOI() {
 
 // Read Binance OI from snapshot (server-side fetched, max 4h stale).
 // Returns Map<symbol, {oiUsd, oiCoin, funding}>.
+// NOTE: snapshot.binance_oi may be empty when GitHub Actions runners are
+// geo-blocked by Binance (HTTP 451). In that case, only OI is missing —
+// funding is fetched client-side via fetchBinanceFundingClientSide().
 function readBinanceOIFromSnapshot(snap) {
   const map = new Map();
   if (!snap?.binance_oi) return map;
@@ -237,20 +240,113 @@ function readBinanceOIFromSnapshot(snap) {
   return map;
 }
 
-// Fetch all 5 client-side OI sources in parallel, then build the 6-exchange
-// aggregated OI Map. Binance comes from snapshot.
+// Fetch OKX funding rates for all USDT-SWAP instruments.
+// OKX's /open-interest endpoint returns OI only (no funding rate), and there
+// is no batch funding-rate endpoint — we have to call /funding-rate?instId=X
+// per symbol. With 20-concurrent batching, all 421 calls complete in <1s.
+// Returns Map<symbol, funding>.
+async function fetchOKXFunding() {
+  const map = new Map();
+  try {
+    // 1. Get all live USDT-SWAP instrument IDs + base assets.
+    // NOTE: OKX SWAP instruments have empty `baseCcy` field — must parse base
+    // from instId (e.g. "BTC-USDT-SWAP" → base="BTC").
+    const instrRes = await fetchWithTimeout('https://www.okx.com/api/v5/public/instruments?instType=SWAP');
+    if (!instrRes.ok) return map;
+    const instrData = await instrRes.json();
+    const swaps = (instrData?.data || [])
+      .filter(i => i.state === 'live' && i.instId.endsWith('-USDT-SWAP'))
+      .map(i => {
+        const parts = i.instId.split('-');  // e.g. ["BTC", "USDT", "SWAP"]
+        return { instId: i.instId, base: parts[0] };
+      });
+    if (swaps.length === 0) return map;
+
+    // 2. Fetch funding rates in parallel batches of 20 (avoids OKX rate limit)
+    const BATCH = 20;
+    for (let i = 0; i < swaps.length; i += BATCH) {
+      const batch = swaps.slice(i, i + BATCH);
+      const results = await Promise.allSettled(
+        batch.map(async ({ instId, base }) => {
+          try {
+            const r = await fetchWithTimeout(`https://www.okx.com/api/v5/public/funding-rate?instId=${instId}`);
+            if (!r.ok) return null;
+            const d = await r.json();
+            if (d.code === '0' && d.data?.[0]) {
+              return { base, funding: parseFloat(d.data[0].fundingRate || '0') };
+            }
+            return null;
+          } catch { return null; }
+        })
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value?.funding != null) {
+          map.set(r.value.base, r.value.funding);
+        }
+      }
+    }
+    console.info(`[scanEngine] OKX funding: ${map.size} assets`);
+  } catch (e) {
+    console.warn('[scanEngine] OKX funding fetch failed:', e.message);
+  }
+  return map;
+}
+
+// Fetch Binance funding rates + mark prices for ALL USDT perps in ONE batch call.
+// /fapi/v1/premiumIndex returns lastFundingRate, markPrice, nextFundingTime for
+// all 850+ USDT perps at once. ~1ms response time.
+//
+// Used for FUNDING RATE only (when user picks 'binance_perps' as scan exchange).
+// The OI(USD) for Binance is computed separately via /openInterest per symbol
+// (handled server-side in build_snapshot.js, stored as binance_oi snapshot key).
+//
+// Requires VPN if Binance is geo-blocked in user's region. If fetch fails
+// (HTTP 451 or network error), returns empty Map — funding will show as null.
+// Returns Map<symbol, funding>.
+async function fetchBinanceFundingClientSide() {
+  const map = new Map();
+  try {
+    const res = await fetchWithTimeout('https://fapi.binance.com/fapi/v1/premiumIndex');
+    if (!res.ok) {
+      console.warn(`[scanEngine] Binance funding HTTP ${res.status} (likely geo-blocked; user needs VPN)`);
+      return map;
+    }
+    const data = await res.json();
+    if (!Array.isArray(data)) return map;
+    for (const p of data) {
+      const sym = p.symbol || '';
+      if (!sym.endsWith('USDT')) continue;
+      const base = sym.replace('USDT', '');
+      const funding = parseFloat(p.lastFundingRate || '0');
+      map.set(base, funding);
+    }
+    console.info(`[scanEngine] Binance funding (client-side): ${map.size} assets`);
+  } catch (e) {
+    console.warn('[scanEngine] Binance funding fetch failed (likely geo-blocked; user needs VPN):', e.message);
+  }
+  return map;
+}
+
+// Fetch all 5 client-side OI sources in parallel + OKX/Binance funding (which
+// require separate endpoints). Binance OI comes from snapshot.
 //
 // Returns: {
 //   aggregatedOI: Map<symbol, {oiUsd, oiCoin, sources}>,
 //   fundingByExchange: { hl, okx, bybit, bitget, gate, binance }  // each is Map<symbol, number|null>
 // }
 async function fetchAggregatedOI(snapshot) {
-  const [hlMap, okxMap, bybitMap, bitgetMap, gateMap] = await Promise.all([
+  // Run all 7 fetchers in parallel:
+  // - 5 OI fetchers (HL, OKX, Bybit, Bitget, Gate)
+  // - OKX funding (per-symbol batch — OKX /open-interest endpoint doesn't return funding)
+  // - Binance funding client-side (1 batch call to /premiumIndex; works when user has VPN)
+  const [hlMap, okxMap, bybitMap, bitgetMap, gateMap, okxFundingMap, binanceFundingMap] = await Promise.all([
     fetchHyperliquidOI(),
     fetchOKXOI(),
     fetchBybitOI(),
     fetchBitgetOI(),
     fetchGateOI(),
+    fetchOKXFunding(),
+    fetchBinanceFundingClientSide(),
   ]);
   const binanceMap = readBinanceOIFromSnapshot(snapshot);
 
@@ -306,11 +402,18 @@ async function fetchAggregatedOI(snapshot) {
   };
   const fundingByExchange = {
     hl: extractFunding(hlMap),
-    okx: extractFunding(okxMap),
+    // OKX /open-interest returns OI only (no funding). Use the dedicated
+    // fetchOKXFunding() Map instead, which calls /funding-rate per symbol.
+    okx: okxFundingMap,
     bybit: extractFunding(bybitMap),
     bitget: extractFunding(bitgetMap),
     gate: extractFunding(gateMap),
-    binance: extractFunding(binanceMap),
+    // Binance: snapshot.binance_oi may be empty (server-side geo-blocked on
+    // GitHub Actions runners). Use client-side premiumIndex fetch instead —
+    // works when user has VPN. If both empty, funding shows as null.
+    binance: binanceFundingMap.size > 0
+      ? binanceFundingMap
+      : extractFunding(binanceMap),
   };
 
   return { aggregatedOI, fundingByExchange };
