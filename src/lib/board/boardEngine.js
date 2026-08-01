@@ -854,67 +854,88 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
   }
   if (!(hlTickers instanceof Map)) hlTickers = new Map();
 
-  // ── Supplementary OI from OKX ──────────────────────────────────────────
-  // Hyperliquid only covers ~232 perps. OKX has a batch open-interest endpoint
-  // (432 SWAP instruments in 1 call). Merge OKX OI for any symbol HL doesn't cover.
+  // ── Fetch OKX OI (batch, ~421 SWAP instruments) ───────────────────────
+  // Store separately so we can SUM with HL + Bybit for aggregated OI.
+  const okxOIMap = new Map();
   try {
     const okxRes = await fetchWithTimeout('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
     if (okxRes.ok) {
       const okxData = await okxRes.json();
       if (okxData?.code === '0' && Array.isArray(okxData.data)) {
-        let added = 0;
         for (const item of okxData.data) {
           const parts = item.instId?.split('-');
           if (!parts || parts.length < 2) continue;
           const symbol = parts[0];
+          const oiUsd = parseFloat(item.oiUsd || '0');
+          const oiCoin = parseFloat(item.oiCcy || '0');
+          okxOIMap.set(symbol, { oiUsd, oiCoin });
+          // Also add to hlTickers if not already there
           if (!hlTickers.has(symbol)) {
-            hlTickers.set(symbol, {
-              openInterest: parseFloat(item.oiCcy || '0'),
-              openInterestUsd: parseFloat(item.oiUsd || '0'),
-              fundingRate: null,
-              price: null,
-            });
-            added++;
+            hlTickers.set(symbol, { openInterest: oiCoin, openInterestUsd: oiUsd, fundingRate: null, price: null });
           }
         }
-        if (added > 0) console.info(`[boardEngine] OKX OI supplement added ${added} assets`);
+        console.info(`[boardEngine] OKX OI: ${okxOIMap.size} assets`);
       }
     }
   } catch (e) {
-    console.warn('[boardEngine] OKX OI supplement failed:', e.message);
+    console.warn('[boardEngine] OKX OI fetch failed:', e.message);
   }
 
-  // ── Supplementary OI + funding from Bybit ──────────────────────────────
-  // Bybit has a batch ticker endpoint (783 linear perps in 1 call) that
-  // includes openInterest, openInterestValue, AND fundingRate. This covers
-  // many assets that neither Hyperliquid nor OKX have. Single API call.
+  // ── Fetch Bybit tickers (batch, ~679 USDT perps, includes OI + funding) ──
+  // Store separately so we can SUM with HL + OKX for aggregated OI.
+  const bybitOIMap = new Map();
   try {
     const bybitRes = await fetchWithTimeout('https://api.bybit.com/v5/market/tickers?category=linear');
     if (bybitRes.ok) {
       const bybitData = await bybitRes.json();
       if (bybitData?.retCode === 0) {
         const items = bybitData?.result?.list || [];
-        let added = 0;
         for (const item of items) {
           const sym = item.symbol || '';
           if (!sym.endsWith('USDT')) continue;
           const symbol = sym.replace('USDT', '');
+          const oiUsd = parseFloat(item.openInterestValue || '0');
+          const oiCoin = parseFloat(item.openInterest || '0');
+          const funding = parseFloat(item.fundingRate || '0');
+          bybitOIMap.set(symbol, { oiUsd, oiCoin, funding });
+          // Also add to hlTickers if not already there
           if (!hlTickers.has(symbol)) {
-            hlTickers.set(symbol, {
-              openInterest: parseFloat(item.openInterest || '0'),
-              openInterestUsd: parseFloat(item.openInterestValue || '0'),
-              fundingRate: parseFloat(item.fundingRate || '0'),
-              price: parseFloat(item.lastPrice || '0'),
-            });
-            added++;
+            hlTickers.set(symbol, { openInterest: oiCoin, openInterestUsd: oiUsd, fundingRate: funding, price: parseFloat(item.lastPrice || '0') });
           }
         }
-        if (added > 0) console.info(`[boardEngine] Bybit OI supplement added ${added} assets`);
+        console.info(`[boardEngine] Bybit OI: ${bybitOIMap.size} assets`);
       }
     }
   } catch (e) {
-    console.warn('[boardEngine] Bybit OI supplement failed:', e.message);
+    console.warn('[boardEngine] Bybit OI fetch failed:', e.message);
   }
+
+  // ── Build aggregated OI map (SUM across all 3 exchanges) ──────────────
+  // For each symbol, sum OI(USD) from Hyperliquid + OKX + Bybit.
+  // This gives a 3-exchange aggregated OI that's much closer to the true
+  // total OI than any single exchange. Coinglass reports ~$48B BTC OI total
+  // across all exchanges; our 3-exchange sum should capture ~$16B (33%)
+  // which is still much better than Hyperliquid alone ($2.1B = 4%).
+  const aggregatedOI = new Map();
+  for (const [symbol, hl] of hlTickers) {
+    const hlOi = hl?.openInterestUsd ?? 0;
+    const okxOi = okxOIMap.get(symbol)?.oiUsd ?? 0;
+    const bybitOi = bybitOIMap.get(symbol)?.oiUsd ?? 0;
+    const totalOi = hlOi + okxOi + bybitOi;
+    if (totalOi > 0) {
+      const hlOiCoin = hl?.openInterest ?? 0;
+      const okxOiCoin = okxOIMap.get(symbol)?.oiCoin ?? 0;
+      const bybitOiCoin = bybitOIMap.get(symbol)?.oiCoin ?? 0;
+      aggregatedOI.set(symbol, {
+        oiUsd: totalOi,
+        oiCoin: hlOiCoin + okxOiCoin + bybitOiCoin,
+        // Use funding from whichever exchange has it (priority: HL > Bybit > OKX)
+        fundingRate: hl?.fundingRate ?? bybitOIMap.get(symbol)?.funding ?? null,
+        sources: (hlOi > 0 ? 1 : 0) + (okxOi > 0 ? 1 : 0) + (bybitOi > 0 ? 1 : 0),
+      });
+    }
+  }
+  console.info(`[boardEngine] Aggregated OI: ${aggregatedOI.size} assets (HL + OKX + Bybit summed)`);
 
   // Retry pass for failed assets
   if (failedAssets.length > 0) {
@@ -1071,18 +1092,19 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
   onProgress({ phase: 'complete', message: 'Done' });
 
   // Build crypto assets array for the Daily tab all-assets table
-  // Includes metrics + OI/funding from Hyperliquid + market cap from snapshot
-  const hlMap = hlTickers instanceof Map ? hlTickers : null;
+  // Uses AGGREGATED OI (sum of Hyperliquid + OKX + Bybit) for the OI/MC ratio
   const mcMap = snapshotMarketCaps || {};
   const cryptoAssets = rawResults
     .filter(r => r.metrics != null)
     .map(r => {
-      const hl = hlMap?.get(r.asset.symbol);
-      const oiUsd = hl?.openInterestUsd ?? null;
+      const agg = aggregatedOI.get(r.asset.symbol);
+      const oiUsd = agg?.oiUsd ?? null;
+      const oiCoin = agg?.oiCoin ?? null;
       const mcap = mcMap[r.asset.symbol] ?? null;
       const oiRatio = (oiUsd != null && oiUsd > 0 && mcap != null && mcap > 0) ? oiUsd / mcap : null;
-      const funding = hl?.fundingRate ?? null;
+      const funding = agg?.fundingRate ?? null;
       const fundingAnn = funding != null ? funding * 3 * 365 * 100 : null;
+      const oiSources = agg?.sources ?? 0;
       return {
         symbol: r.asset.symbol,
         name: r.asset.name,

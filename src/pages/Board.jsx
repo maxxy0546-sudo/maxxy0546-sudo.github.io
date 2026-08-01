@@ -96,15 +96,20 @@ export default function Board() {
         if (cg) for (const [sym, c] of Object.entries(cg)) if (c.marketCap && !mcaps[sym]) mcaps[sym] = c.marketCap;
 
         // Fetch Hyperliquid tickers (single bulk call, ~232 assets)
-        let hlTickers = null;
+        const hlOIMap = new Map();
         try {
-          hlTickers = await fetchHyperliquidTickers();
+          const hl = await fetchHyperliquidTickers();
+          if (hl instanceof Map) {
+            for (const [sym, t] of hl) {
+              hlOIMap.set(sym, { oiUsd: t.openInterestUsd ?? 0, oiCoin: t.openInterest ?? 0, funding: t.fundingRate ?? null });
+            }
+          }
         } catch (e) {
           console.warn('[Board] Hyperliquid ticker fetch for Extreme OI failed:', e.message);
         }
-        if (!(hlTickers instanceof Map)) hlTickers = new Map();
 
-        // Supplementary OI from OKX (batch, ~432 SWAP instruments)
+        // Fetch OKX OI (batch, ~421 SWAP instruments)
+        const okxOIMap = new Map();
         try {
           const res = await fetch('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
           if (res.ok) {
@@ -113,63 +118,60 @@ export default function Board() {
               for (const item of d.data) {
                 const parts = item.instId?.split('-');
                 if (!parts || parts.length < 2) continue;
-                const symbol = parts[0];
-                if (!hlTickers.has(symbol)) {
-                  hlTickers.set(symbol, {
-                    openInterest: parseFloat(item.oiCcy || '0'),
-                    openInterestUsd: parseFloat(item.oiUsd || '0'),
-                    fundingRate: null,
-                  });
-                }
+                okxOIMap.set(parts[0], { oiUsd: parseFloat(item.oiUsd || '0'), oiCoin: parseFloat(item.oiCcy || '0') });
               }
             }
           }
         } catch (e) {
-          console.warn('[Board] OKX OI supplement failed:', e.message);
+          console.warn('[Board] OKX OI fetch failed:', e.message);
         }
 
-        // Supplementary OI + funding from Bybit (batch, ~679 USDT perps)
+        // Fetch Bybit tickers (batch, ~679 USDT perps)
+        const bybitOIMap = new Map();
         try {
           const res = await fetch('https://api.bybit.com/v5/market/tickers?category=linear');
           if (res.ok) {
             const d = await res.json();
             if (d?.retCode === 0) {
-              const items = d?.result?.list || [];
-              for (const item of items) {
+              for (const item of (d?.result?.list || [])) {
                 const sym = item.symbol || '';
                 if (!sym.endsWith('USDT')) continue;
-                const symbol = sym.replace('USDT', '');
-                if (!hlTickers.has(symbol)) {
-                  hlTickers.set(symbol, {
-                    openInterest: parseFloat(item.openInterest || '0'),
-                    openInterestUsd: parseFloat(item.openInterestValue || '0'),
-                    fundingRate: parseFloat(item.fundingRate || '0'),
-                  });
-                }
+                bybitOIMap.set(sym.replace('USDT', ''), {
+                  oiUsd: parseFloat(item.openInterestValue || '0'),
+                  oiCoin: parseFloat(item.openInterest || '0'),
+                  funding: parseFloat(item.fundingRate || '0'),
+                });
               }
             }
           }
         } catch (e) {
-          console.warn('[Board] Bybit OI supplement failed:', e.message);
+          console.warn('[Board] Bybit OI fetch failed:', e.message);
         }
 
         if (cancelled) return;
 
-        // Compute OI/MC ratio for every asset that has both OI and market cap
+        // Build aggregated OI (SUM across all 3 exchanges) + compute OI/MC ratio
+        const allSymbols = new Set([...hlOIMap.keys(), ...okxOIMap.keys(), ...bybitOIMap.keys()]);
         const items = [];
-        for (const [symbol, hl] of hlTickers instanceof Map ? hlTickers : []) {
-          const oiUsd = hl?.openInterestUsd;
+        for (const symbol of allSymbols) {
+          const hlOi = hlOIMap.get(symbol)?.oiUsd ?? 0;
+          const okxOi = okxOIMap.get(symbol)?.oiUsd ?? 0;
+          const bybitOi = bybitOIMap.get(symbol)?.oiUsd ?? 0;
+          const totalOi = hlOi + okxOi + bybitOi;
           const mcap = mcaps[symbol];
-          if (oiUsd != null && oiUsd > 0 && mcap != null && mcap > 0) {
-            const funding = hl?.fundingRate ?? null;
+          if (totalOi > 0 && mcap != null && mcap > 0) {
+            const funding = hlOIMap.get(symbol)?.funding ?? bybitOIMap.get(symbol)?.funding ?? null;
             const fundingAnn = funding != null ? funding * 3 * 365 * 100 : null;
+            const hlOiCoin = hlOIMap.get(symbol)?.oiCoin ?? 0;
+            const okxOiCoin = okxOIMap.get(symbol)?.oiCoin ?? 0;
+            const bybitOiCoin = bybitOIMap.get(symbol)?.oiCoin ?? 0;
             items.push({
               symbol,
-              name: mcaps[symbol] ? symbol : symbol,  // name from snapshot if available
-              oiUsd,
-              oiCoin: hl?.openInterest ?? null,
+              name: symbol,
+              oiUsd: totalOi,
+              oiCoin: hlOiCoin + okxOiCoin + bybitOiCoin,
               marketCap: mcap,
-              oiRatio: oiUsd / mcap,
+              oiRatio: totalOi / mcap,
               funding,
               fundingAnn,
             });
