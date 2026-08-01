@@ -545,6 +545,74 @@ async function fetchCryptoUniverse() {
   return {};
 }
 
+// ─── Binance Futures OI — server-side batch fetch ────────────────────────────
+// Binance has no batch OI endpoint, so we fetch per-symbol in parallel batches.
+// This runs server-side during snapshot build (4× daily), so the data is at most
+// 4h old when displayed. Binance is the largest perp exchange by OI (~19% of total
+// crypto OI per Coinglass), so this is critical data.
+//
+// Rate limit: 2400 weight/min. Each /fapi/v1/openInterest call = 1 weight.
+// 530 symbols × 1 weight = 530 weights, well under the limit.
+// Also fetches /fapi/v1/premiumIndex (1 call, all symbols) for funding rates.
+//
+// Returns: { SYMBOL: { oiUsd, oiCoin, fundingRate } }
+async function fetchBinanceOI() {
+  console.log('── Binance Futures OI (server-side batch) ──');
+  const out = {};
+  try {
+    // 1. Get all USDT perp symbols
+    const exchangeInfo = await fetchJson('https://fapi.binance.com/fapi/v1/exchangeInfo');
+    const perpSymbols = (exchangeInfo.symbols || [])
+      .filter(s => s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT' && s.status === 'TRADING')
+      .map(s => ({ base: s.baseAsset, symbol: s.symbol }));
+    console.log(`  Found ${perpSymbols.length} USDT perp symbols`);
+
+    // 2. Get funding rates + mark prices for all symbols (1 batch call)
+    const premiumIndex = await fetchJson('https://fapi.binance.com/fapi/v1/premiumIndex');
+    const fundingMap = new Map();
+    for (const p of premiumIndex) {
+      fundingMap.set(p.symbol, {
+        fundingRate: parseFloat(p.lastFundingRate || '0'),
+        markPrice: parseFloat(p.markPrice || '0'),
+      });
+    }
+
+    // 3. Fetch OI per symbol in parallel batches (20 concurrent)
+    const BATCH_SIZE = 20;
+    let completed = 0;
+    for (let i = 0; i < perpSymbols.length; i += BATCH_SIZE) {
+      const batch = perpSymbols.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(async ({ base, symbol }) => {
+          const res = await fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`);
+          if (!res.ok) return null;
+          const d = await res.json();
+          const oiCoin = parseFloat(d.openInterest || '0');
+          const pi = fundingMap.get(symbol);
+          const markPrice = pi?.markPrice ?? 0;
+          const fundingRate = pi?.fundingRate ?? null;
+          return { base, oiCoin, oiUsd: oiCoin * markPrice, fundingRate };
+        })
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value && r.value.oiUsd > 0) {
+          out[r.value.base] = {
+            oiUsd: r.value.oiUsd,
+            oiCoin: r.value.oiCoin,
+            fundingRate: r.value.fundingRate,
+          };
+        }
+      }
+      completed += batch.length;
+      if (completed % 100 < BATCH_SIZE) console.log(`  Binance OI: ${completed}/${perpSymbols.length} fetched`);
+    }
+    console.log(`  ✓ Binance OI: ${Object.keys(out).length} assets with OI data`);
+  } catch (e) {
+    console.warn(`  ✗ Binance OI failed: ${e.message}`);
+  }
+  return out;
+}
+
 // ─── CoinGecko historical market charts (for Ultra6+OB1 allocation) ──────────
 // Fetches BTC + ETH daily price + volume history, plus global market cap chart
 // for dominance series. These are needed to compute the allocation signal
@@ -1149,7 +1217,7 @@ async function main() {
   // Log CMC credit usage at start (FREE — 0 credits) so we see budget before/after
   await logCMCCreditUsage();
 
-  let [fred, coingecko, fearGreed, kenFrench, cboe, tradfiOHLCV, etfFlows, factorWatch, cryptoFactors, cgHistorical, cryptoUniverse, cmcTrending, globalMetrics] = await Promise.all([
+  let [fred, coingecko, fearGreed, kenFrench, cboe, tradfiOHLCV, etfFlows, factorWatch, cryptoFactors, cgHistorical, cryptoUniverse, cmcTrending, globalMetrics, binanceOI] = await Promise.all([
     fetchAllFred(),
     fetchCoinGeckoTop(),
     fetchFearGreed(),
@@ -1163,6 +1231,7 @@ async function main() {
     fetchCryptoUniverse(),
     fetchCMCTrending(),
     fetchGlobalMetrics(),
+    fetchBinanceOI(),
   ]);
 
   // If crypto_universe is empty (CMC + CoinGecko both failed), reuse previous snapshot's
@@ -1204,6 +1273,10 @@ async function main() {
   }
   if (!globalMetrics && _prevSnapshot?.global_metrics) {
     globalMetrics = _prevSnapshot.global_metrics;
+  }
+  if ((!binanceOI || Object.keys(binanceOI).length < 100) && _prevSnapshot?.binance_oi) {
+    console.log('  ⚠ binance_oi empty — using previous snapshot (stale)');
+    binanceOI = _prevSnapshot.binance_oi;
   }
 
   // If FRED data is empty (API failure), use previous snapshot's FRED data
@@ -1329,6 +1402,7 @@ async function main() {
     crypto_universe: cryptoUniverse,
     cmc_trending: cmcTrending,
     global_metrics: globalMetrics,
+    binance_oi: binanceOI,
     fear_greed: fearGreed,
     ken_french: kenFrench,
     cboe_put_call: cboe,
@@ -1362,6 +1436,7 @@ async function main() {
   console.log(`  Crypto universe:        ${Object.keys(cryptoUniverse).length} coins (for Scanner top-500)`);
   console.log(`  CMC trending:           ${cmcTrending ? `${(cmcTrending.trending || []).length} trending + ${(cmcTrending.gainers || []).length} gainers + ${(cmcTrending.losers || []).length} losers + ${(cmcTrending.mostVisited || []).length} most-visited + ${(cmcTrending.community || []).length} community` : 'null'}`);
   console.log(`  CMC global metrics:     ${globalMetrics ? `BTC dom ${globalMetrics.btcDominance?.toFixed(1)}%` : 'null'}`);
+  console.log(`  Binance OI:             ${binanceOI ? `${Object.keys(binanceOI).length} assets` : 'null'}`);
   console.log(`  Fear & Greed days:      ${fearGreed.length}`);
   console.log(`  CBOE P/C series:        ${Object.keys(cboe).length}`);
   console.log(`  Ken French months:      ${kenFrench.length}`);

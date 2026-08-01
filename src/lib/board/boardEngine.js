@@ -935,7 +935,106 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
       });
     }
   }
-  console.info(`[boardEngine] Aggregated OI: ${aggregatedOI.size} assets (HL + OKX + Bybit summed)`);
+  console.info(`[boardEngine] Aggregated OI (HL+OKX+Bybit): ${aggregatedOI.size} assets`);
+
+  // ── Fetch Bitget tickers (batch, ~733 USDT perps, includes holdingAmount=OI) ──
+  const bitgetOIMap = new Map();
+  try {
+    const bgRes = await fetchWithTimeout('https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES');
+    if (bgRes.ok) {
+      const bgData = await bgRes.json();
+      if (bgData?.code === '00000') {
+        for (const item of (bgData.data || [])) {
+          const sym = item.symbol || '';
+          if (!sym.endsWith('USDT')) continue;
+          const symbol = sym.replace('USDT', '');
+          const oiCoin = parseFloat(item.holdingAmount || '0');
+          const price = parseFloat(item.lastPr || '0');
+          const oiUsd = oiCoin * price;
+          const funding = parseFloat(item.fundingRate || '0');
+          if (oiUsd > 0) bitgetOIMap.set(symbol, { oiUsd, oiCoin, funding });
+        }
+        console.info(`[boardEngine] Bitget OI: ${bitgetOIMap.size} assets`);
+      }
+    }
+  } catch (e) {
+    console.warn('[boardEngine] Bitget OI fetch failed:', e.message);
+  }
+
+  // ── Fetch Gate.io contracts (batch, ~857 USDT perps, includes position_size=OI) ──
+  const gateOIMap = new Map();
+  try {
+    const gateRes = await fetchWithTimeout('https://api.gateio.ws/api/v4/futures/usdt/contracts');
+    if (gateRes.ok) {
+      const gateData = await gateRes.json();
+      if (Array.isArray(gateData)) {
+        for (const c of gateData) {
+          const name = c.name || '';
+          if (!name.endsWith('_USDT')) continue;
+          const symbol = name.replace('_USDT', '');
+          const positionSize = parseFloat(c.position_size || '0');
+          const quantoMultiplier = parseFloat(c.quanto_multiplier || '1');
+          const markPrice = parseFloat(c.mark_price || '0');
+          const oiUsd = positionSize * quantoMultiplier * markPrice;
+          const oiCoin = positionSize * quantoMultiplier;
+          const funding = parseFloat(c.funding_rate || '0');
+          if (oiUsd > 0) gateOIMap.set(symbol, { oiUsd, oiCoin, funding });
+        }
+        console.info(`[boardEngine] Gate.io OI: ${gateOIMap.size} assets`);
+      }
+    }
+  } catch (e) {
+    console.warn('[boardEngine] Gate.io OI fetch failed:', e.message);
+  }
+
+  // ── Rebuild aggregated OI with ALL 6 sources (HL + OKX + Bybit + Bitget + Gate + Binance snapshot) ──
+  // Binance OI comes from the server-side snapshot (binance_oi key), refreshed 4× daily.
+  // The other 5 are fetched live client-side. Summing all 6 gives us the broadest
+  // exchange coverage possible without a Coinglass API key.
+  const binanceOIMap = snapshotMarketCaps?._binanceOI || {};
+  // Remove the _binanceOI key from snapshotMarketCaps so it doesn't pollute the mcMap
+  if (snapshotMarketCaps) delete snapshotMarketCaps._binanceOI;
+
+  aggregatedOI.clear();
+  const allOISymbols = new Set([
+    ...hlTickers.keys(),
+    ...okxOIMap.keys(),
+    ...bybitOIMap.keys(),
+    ...bitgetOIMap.keys(),
+    ...gateOIMap.keys(),
+    ...Object.keys(binanceOIMap),
+  ]);
+  for (const symbol of allOISymbols) {
+    const hlOi = hlTickers.get(symbol)?.openInterestUsd ?? 0;
+    const okxOi = okxOIMap.get(symbol)?.oiUsd ?? 0;
+    const bybitOi = bybitOIMap.get(symbol)?.oiUsd ?? 0;
+    const bitgetOi = bitgetOIMap.get(symbol)?.oiUsd ?? 0;
+    const gateOi = gateOIMap.get(symbol)?.oiUsd ?? 0;
+    const binanceOi = binanceOIMap[symbol]?.oiUsd ?? 0;
+    const totalOi = hlOi + okxOi + bybitOi + bitgetOi + gateOi + binanceOi;
+    if (totalOi > 0) {
+      const hlOiCoin = hlTickers.get(symbol)?.openInterest ?? 0;
+      const okxOiCoin = okxOIMap.get(symbol)?.oiCoin ?? 0;
+      const bybitOiCoin = bybitOIMap.get(symbol)?.oiCoin ?? 0;
+      const bitgetOiCoin = bitgetOIMap.get(symbol)?.oiCoin ?? 0;
+      const gateOiCoin = gateOIMap.get(symbol)?.oiCoin ?? 0;
+      const binanceOiCoin = binanceOIMap[symbol]?.oiCoin ?? 0;
+      // Funding priority: HL > Bybit > Bitget > Gate > Binance > OKX(null)
+      const funding = hlTickers.get(symbol)?.fundingRate
+        ?? bybitOIMap.get(symbol)?.funding
+        ?? bitgetOIMap.get(symbol)?.funding
+        ?? gateOIMap.get(symbol)?.funding
+        ?? binanceOIMap[symbol]?.fundingRate
+        ?? null;
+      aggregatedOI.set(symbol, {
+        oiUsd: totalOi,
+        oiCoin: hlOiCoin + okxOiCoin + bybitOiCoin + bitgetOiCoin + gateOiCoin + binanceOiCoin,
+        fundingRate: funding,
+        sources: (hlOi > 0 ? 1 : 0) + (okxOi > 0 ? 1 : 0) + (bybitOi > 0 ? 1 : 0) + (bitgetOi > 0 ? 1 : 0) + (gateOi > 0 ? 1 : 0) + (binanceOi > 0 ? 1 : 0),
+      });
+    }
+  }
+  console.info(`[boardEngine] Aggregated OI (6-exchange): ${aggregatedOI.size} assets`);
 
   // Retry pass for failed assets
   if (failedAssets.length > 0) {

@@ -148,28 +148,74 @@ export default function Board() {
           console.warn('[Board] Bybit OI fetch failed:', e.message);
         }
 
+        // Fetch Bitget tickers (batch, ~733 USDT perps)
+        const bitgetOIMap = new Map();
+        try {
+          const res = await fetch('https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES');
+          if (res.ok) {
+            const d = await res.json();
+            if (d?.code === '00000') {
+              for (const item of (d.data || [])) {
+                const sym = item.symbol || '';
+                if (!sym.endsWith('USDT')) continue;
+                const symbol = sym.replace('USDT', '');
+                const oiCoin = parseFloat(item.holdingAmount || '0');
+                const price = parseFloat(item.lastPr || '0');
+                bitgetOIMap.set(symbol, { oiUsd: oiCoin * price, oiCoin, funding: parseFloat(item.fundingRate || '0') });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Board] Bitget OI fetch failed:', e.message);
+        }
+
+        // Fetch Gate.io contracts (batch, ~857 USDT perps)
+        const gateOIMap = new Map();
+        try {
+          const res = await fetch('https://api.gateio.ws/api/v4/futures/usdt/contracts');
+          if (res.ok) {
+            const d = await res.json();
+            if (Array.isArray(d)) {
+              for (const c of d) {
+                const name = c.name || '';
+                if (!name.endsWith('_USDT')) continue;
+                const symbol = name.replace('_USDT', '');
+                const ps = parseFloat(c.position_size || '0');
+                const qm = parseFloat(c.quanto_multiplier || '1');
+                const mp = parseFloat(c.mark_price || '0');
+                gateOIMap.set(symbol, { oiUsd: ps * qm * mp, oiCoin: ps * qm, funding: parseFloat(c.funding_rate || '0') });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Board] Gate.io OI fetch failed:', e.message);
+        }
+
         if (cancelled) return;
 
-        // Build aggregated OI (SUM across all 3 exchanges) + compute OI/MC ratio
-        const allSymbols = new Set([...hlOIMap.keys(), ...okxOIMap.keys(), ...bybitOIMap.keys()]);
+        // Binance OI from snapshot (server-side fetched, max 4h stale)
+        const binanceOI = snap?.binance_oi || {};
+
+        // Build aggregated OI (SUM across ALL 6 exchanges) + compute OI/MC ratio
+        const allSymbols = new Set([...hlOIMap.keys(), ...okxOIMap.keys(), ...bybitOIMap.keys(), ...bitgetOIMap.keys(), ...gateOIMap.keys(), ...Object.keys(binanceOI)]);
         const items = [];
         for (const symbol of allSymbols) {
           const hlOi = hlOIMap.get(symbol)?.oiUsd ?? 0;
           const okxOi = okxOIMap.get(symbol)?.oiUsd ?? 0;
           const bybitOi = bybitOIMap.get(symbol)?.oiUsd ?? 0;
-          const totalOi = hlOi + okxOi + bybitOi;
+          const bitgetOi = bitgetOIMap.get(symbol)?.oiUsd ?? 0;
+          const gateOi = gateOIMap.get(symbol)?.oiUsd ?? 0;
+          const binanceOi = binanceOI[symbol]?.oiUsd ?? 0;
+          const totalOi = hlOi + okxOi + bybitOi + bitgetOi + gateOi + binanceOi;
           const mcap = mcaps[symbol];
           if (totalOi > 0 && mcap != null && mcap > 0) {
-            const funding = hlOIMap.get(symbol)?.funding ?? bybitOIMap.get(symbol)?.funding ?? null;
+            const funding = hlOIMap.get(symbol)?.funding ?? bybitOIMap.get(symbol)?.funding ?? bitgetOIMap.get(symbol)?.funding ?? gateOIMap.get(symbol)?.funding ?? binanceOI[symbol]?.fundingRate ?? null;
             const fundingAnn = funding != null ? funding * 3 * 365 * 100 : null;
-            const hlOiCoin = hlOIMap.get(symbol)?.oiCoin ?? 0;
-            const okxOiCoin = okxOIMap.get(symbol)?.oiCoin ?? 0;
-            const bybitOiCoin = bybitOIMap.get(symbol)?.oiCoin ?? 0;
             items.push({
               symbol,
               name: symbol,
               oiUsd: totalOi,
-              oiCoin: hlOiCoin + okxOiCoin + bybitOiCoin,
+              oiCoin: (hlOIMap.get(symbol)?.oiCoin ?? 0) + (okxOIMap.get(symbol)?.oiCoin ?? 0) + (bybitOIMap.get(symbol)?.oiCoin ?? 0) + (bitgetOIMap.get(symbol)?.oiCoin ?? 0) + (gateOIMap.get(symbol)?.oiCoin ?? 0) + (binanceOI[symbol]?.oiCoin ?? 0),
               marketCap: mcap,
               oiRatio: totalOi / mcap,
               funding,
@@ -307,6 +353,9 @@ export default function Board() {
           if (c.marketCap && !snapMcaps[sym]) snapMcaps[sym] = c.marketCap;
         }
       }
+      // Pass Binance OI from snapshot (server-side fetched, max 4h stale)
+      // Stored under _binanceOI key — boardEngine extracts and removes it
+      if (snap?.binance_oi) snapMcaps._binanceOI = snap.binance_oi;
 
       const result = await runBoardAnalysis(exch, handleProgress, data, snapMcaps);
       setData(result);
