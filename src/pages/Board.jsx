@@ -194,7 +194,7 @@ export default function Board() {
         if (cancelled) return;
 
         // Binance OI from snapshot (server-side fetched, max 4h stale)
-        const binanceOI = snap?.binance_oi || {};
+        const binanceOI = snapshotData?.binance_oi || {};
 
         // Build aggregated OI (SUM across ALL 6 exchanges) + compute OI/MC ratio
         const allSymbols = new Set([...hlOIMap.keys(), ...okxOIMap.keys(), ...bybitOIMap.keys(), ...bitgetOIMap.keys(), ...gateOIMap.keys(), ...Object.keys(binanceOI)]);
