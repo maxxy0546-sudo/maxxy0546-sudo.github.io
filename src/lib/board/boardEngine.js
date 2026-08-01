@@ -1022,6 +1022,39 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
 
   onProgress({ phase: 'complete', message: 'Done' });
 
+  // Build crypto assets array for the Daily tab all-assets table
+  // Includes metrics + OI/funding from Hyperliquid + market cap from snapshot
+  const hlMap = hlTickers instanceof Map ? hlTickers : null;
+  const mcMap = snapshotMarketCaps || {};
+  const cryptoAssets = rawResults
+    .filter(r => r.metrics != null)
+    .map(r => {
+      const hl = hlMap?.get(r.asset.symbol);
+      const oiUsd = hl?.openInterestUsd ?? null;
+      const mcap = mcMap[r.asset.symbol] ?? null;
+      const oiRatio = (oiUsd != null && oiUsd > 0 && mcap != null && mcap > 0) ? oiUsd / mcap : null;
+      const funding = hl?.fundingRate ?? null;
+      const fundingAnn = funding != null ? funding * 3 * 365 * 100 : null;
+      return {
+        symbol: r.asset.symbol,
+        name: r.asset.name,
+        theme: r.asset.theme,
+        price: r.metrics.price,
+        sparkline: r.metrics.sparkline,
+        ret1d: r.metrics.ret1d,
+        ret5d: r.metrics.ret5d,
+        ret20d: r.metrics.ret20d,
+        ret60d: r.metrics.ret60d,
+        distMa20: r.metrics.distMa20,
+        distMa50: r.metrics.distMa50,
+        atrExt50ma: r.metrics.atrExt50ma,
+        volRatio: r.metrics.volRatio,
+        oiRatio,
+        fundingAnn,
+      };
+    })
+    .sort((a, b) => (b.ret20d ?? -999) - (a.ret20d ?? -999));
+
   return {
     regime,
     regimeLabel,
@@ -1039,6 +1072,7 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
     momentumScan,
     breadthSeries,
     quickView,
+    cryptoAssets,
     updatedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     assetCount: total,
   };

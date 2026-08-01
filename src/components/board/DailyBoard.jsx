@@ -536,14 +536,146 @@ function ETFFlowTable() {
   );
 }
 
+// ── Crypto All-Assets Table ────────────────────────────────────────────────
+// Mirrors the TradFi all-assets table but for crypto universe.
+// Replaces 52W% with OI/MC ratio. Ticker column is sticky.
+
+function MiniSparkline({ data }) {
+  if (!data || data.length < 2) return <span className="text-[9px]" style={{ color: 'var(--scanner-text3)' }}>—</span>;
+  const w = 80, h = 24;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - 2 - ((v - min) / range) * (h - 4);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const isUp = data[data.length - 1] >= data[0];
+  const color = isUp ? 'var(--scanner-green)' : 'var(--scanner-red)';
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} fill="none">
+      <path d={`M${pts.join(' L')}`} stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" opacity="0.85" />
+    </svg>
+  );
+}
+
+function CryptoAssetsTable({ assets }) {
+  const [sortKey, setSortKey] = useState('ret20d');
+  const [sortDir, setSortDir] = useState('desc');
+
+  const sorted = [...assets].sort((a, b) => {
+    const av = a[sortKey] ?? -Infinity;
+    const bv = b[sortKey] ?? -Infinity;
+    return sortDir === 'desc' ? bv - av : av - bv;
+  });
+
+  const headers = [
+    { key: 'symbol', label: 'Ticker' },
+    { key: null, label: 'Name' },
+    { key: 'price', label: 'Price' },
+    { key: null, label: '20D' },
+    { key: 'ret1d', label: '1D' },
+    { key: 'ret5d', label: '5D' },
+    { key: 'ret20d', label: '20D' },
+    { key: 'ret60d', label: '60D' },
+    { key: 'distMa20', label: 'vs20MA' },
+    { key: 'distMa50', label: 'vs50MA' },
+    { key: 'atrExt50ma', label: 'ATR' },
+    { key: 'volRatio', label: 'Vol' },
+    { key: 'oiRatio', label: 'OI/MC' },
+  ];
+
+  return (
+    <section>
+      <SectionLabel>Crypto Universe · All Assets</SectionLabel>
+      <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
+        <table className="w-full border-collapse min-w-[1100px]">
+          <thead>
+            <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
+              {headers.map((h, hi) => (
+                <th
+                  key={hi}
+                  className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase whitespace-nowrap py-2.5 px-2.5 ${h.key ? 'cursor-pointer' : ''} text-left`}
+                  style={{
+                    color: sortKey === h.key ? 'var(--scanner-accent)' : 'var(--scanner-text3)',
+                    ...(hi === 0 ? { position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' } : {}),
+                  }}
+                  onClick={() => {
+                    if (!h.key) return;
+                    if (sortKey === h.key) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+                    else { setSortKey(h.key); setSortDir('desc'); }
+                  }}
+                >
+                  {h.label}
+                  {sortKey === h.key && <span className="ml-0.5 opacity-60">{sortDir === 'desc' ? ' ↓' : ' ↑'}</span>}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((item) => (
+              <tr key={item.symbol}
+                style={{ borderBottom: '1px solid var(--scanner-border)' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                <td className="py-2 px-2.5" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
+                  <span className="text-[11px] font-bold" style={{ color: 'var(--scanner-text)' }}>{item.symbol}</span>
+                </td>
+                <td className="py-2 px-2.5 text-[10px]" style={{ color: 'var(--scanner-text3)', maxWidth: 100 }}>
+                  <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{item.name}</span>
+                </td>
+                <td className="py-2 px-2.5 text-[11px] font-semibold tabular-nums" style={{ color: 'var(--scanner-text)' }}>
+                  {item.price != null ? item.price.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '—'}
+                </td>
+                <td className="py-2 px-2.5">
+                  <MiniSparkline data={item.sparkline?.slice(-20)} />
+                </td>
+                <td className="py-2 px-2.5"><span className="tabular-nums text-[10px] font-semibold" style={{ color: retColor(item.ret1d) }}>{fmtPct(item.ret1d)}</span></td>
+                <td className="py-2 px-2.5"><span className="tabular-nums text-[10px] font-semibold" style={{ color: retColor(item.ret5d) }}>{fmtPct(item.ret5d)}</span></td>
+                <td className="py-2 px-2.5"><span className="tabular-nums text-[10px] font-semibold" style={{ color: retColor(item.ret20d) }}>{fmtPct(item.ret20d)}</span></td>
+                <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: retColor(item.ret60d) }}>{fmtPct(item.ret60d)}</span></td>
+                <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: retColor(item.distMa20 != null ? item.distMa20 / 100 : null) }}>{item.distMa20 != null ? fmtPctRaw(item.distMa20) : '—'}</span></td>
+                <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: retColor(item.distMa50 != null ? item.distMa50 / 100 : null) }}>{item.distMa50 != null ? fmtPctRaw(item.distMa50) : '—'}</span></td>
+                <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: 'var(--scanner-text2)' }}>{item.atrExt50ma != null ? item.atrExt50ma.toFixed(1) : '—'}</span></td>
+                <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: 'var(--scanner-text2)' }}>{item.volRatio != null ? item.volRatio.toFixed(1) + 'x' : '—'}</span></td>
+                <td className="py-2 px-2.5">
+                  <span
+                    className="text-[10px] font-semibold tabular-nums cursor-help"
+                    style={{
+                      color: item.oiRatio == null ? 'var(--scanner-text3)' :
+                             item.oiRatio >= 0.30 ? 'var(--scanner-red)' :
+                             item.oiRatio >= 0.15 ? 'var(--scanner-accent)' :
+                             'var(--scanner-text2)'
+                    }}
+                    title={item.oiRatio != null
+                      ? `OI/MC: ${(item.oiRatio * 100).toFixed(1)}% of market cap in open interest. >30% = extreme, >15% = elevated.`
+                      : 'OI/MC unavailable (no Hyperliquid OI or market cap data)'}
+                  >
+                    {item.oiRatio != null ? `${(item.oiRatio * 100).toFixed(1)}%` : '—'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-[8px] mt-1.5" style={{ color: 'var(--scanner-text3)' }}>
+        {sorted.length} assets · sorted by 20D return · OI/MC from Hyperliquid + CMC market cap
+      </div>
+    </section>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function DailyBoard({
-  themes, benchmarks, themeRotation, startingToMove, styleRotation, riskPulse, themeSectorRotation
+  themes, benchmarks, themeRotation, startingToMove, styleRotation, riskPulse, themeSectorRotation, cryptoAssets
 }) {
   return (
     <div className="font-mono space-y-8 px-5 md:px-8 py-5">
       <ETFFlowTable />
+      {cryptoAssets && cryptoAssets.length > 0 && <CryptoAssetsTable assets={cryptoAssets} />}
       <BenchmarkSnapshot benchmarks={benchmarks} />
       <StartingToMove startingToMove={startingToMove} />
       <ThemeStatus themes={themes} />

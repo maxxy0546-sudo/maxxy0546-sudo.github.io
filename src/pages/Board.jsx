@@ -448,6 +448,7 @@ export default function Board() {
               styleRotation={styleRotation}
               riskPulse={riskPulse}
               themeSectorRotation={themeSectorRotation}
+              cryptoAssets={data?.cryptoAssets}
             />
           )}
           {activeTab === 1 && <MacroTab tradData={tradData} isLoading={tradLoading} snapshotLoading={tradSnapshotLoading} onRefresh={runTradAnalysis} />}
