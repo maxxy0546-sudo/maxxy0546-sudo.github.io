@@ -582,6 +582,8 @@ function CryptoAssetsTable({ assets }) {
     { key: 'distMa20', label: 'vs20MA' },
     { key: 'distMa50', label: 'vs50MA' },
     { key: 'atrExt50ma', label: 'ATR' },
+    { key: 'rsi14', label: 'RSI' },
+    { key: 'rs_btc_20d', label: 'RS/BTC' },
     { key: 'volRatio', label: 'Vol' },
     { key: 'oiRatio', label: 'OI/MC' },
   ];
@@ -590,7 +592,7 @@ function CryptoAssetsTable({ assets }) {
     <section>
       <SectionLabel>Crypto Universe · All Assets</SectionLabel>
       <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-        <table className="w-full border-collapse min-w-[1100px]">
+        <table className="w-full border-collapse min-w-[1300px]">
           <thead>
             <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
               {headers.map((h, hi) => (
@@ -638,6 +640,8 @@ function CryptoAssetsTable({ assets }) {
                 <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: retColor(item.distMa20 != null ? item.distMa20 / 100 : null) }}>{item.distMa20 != null ? fmtPctRaw(item.distMa20) : '—'}</span></td>
                 <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: retColor(item.distMa50 != null ? item.distMa50 / 100 : null) }}>{item.distMa50 != null ? fmtPctRaw(item.distMa50) : '—'}</span></td>
                 <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: 'var(--scanner-text2)' }}>{item.atrExt50ma != null ? item.atrExt50ma.toFixed(1) : '—'}</span></td>
+                <td className="py-2 px-2.5"><span className="tabular-nums text-[10px] font-semibold" style={{ color: item.rsi14 == null ? 'var(--scanner-text3)' : item.rsi14 < 30 ? 'var(--scanner-green)' : item.rsi14 > 70 ? 'var(--scanner-red)' : 'var(--scanner-text2)' }}>{item.rsi14 != null ? item.rsi14.toFixed(0) : '—'}</span></td>
+                <td className="py-2 px-2.5"><span className="tabular-nums text-[10px] font-semibold" style={{ color: retColor(item.rs_btc_20d) }}>{item.rs_btc_20d != null ? fmtPctRaw(item.rs_btc_20d * 100) : '—'}</span></td>
                 <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: 'var(--scanner-text2)' }}>{item.volRatio != null ? item.volRatio.toFixed(1) + 'x' : '—'}</span></td>
                 <td className="py-2 px-2.5">
                   <span

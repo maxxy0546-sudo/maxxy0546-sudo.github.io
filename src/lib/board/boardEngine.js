@@ -141,6 +141,26 @@ function computeMetrics(candles) {
   const dollarVols = candles.slice(-20).map(c => c.close * c.vol);
   const avgDollarVol20d = dollarVols.reduce((a,b)=>a+b,0) / dollarVols.length;
 
+  // RSI(14) — Wilder's smoothing method
+  let rsi14 = null;
+  if (closes.length >= 15) {
+    let gains = 0, losses = 0;
+    for (let i = 1; i <= 14; i++) {
+      const diff = closes[i] - closes[i - 1];
+      if (diff >= 0) gains += diff; else losses -= diff;
+    }
+    let avgGain = gains / 14;
+    let avgLoss = losses / 14;
+    for (let i = 15; i < closes.length; i++) {
+      const diff = closes[i] - closes[i - 1];
+      const gain = diff >= 0 ? diff : 0;
+      const loss = diff < 0 ? -diff : 0;
+      avgGain = (avgGain * 13 + gain) / 14;
+      avgLoss = (avgLoss * 13 + loss) / 14;
+    }
+    rsi14 = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+  }
+
   const distMa20  = ma20  != null ? (price / ma20  - 1) * 100 : null;
   const distMa50  = ma50  != null ? (price / ma50  - 1) * 100 : null;
   const distMa200 = ma200 != null ? (price / ma200 - 1) * 100 : null;
@@ -152,6 +172,7 @@ function computeMetrics(candles) {
     ret1d, ret5d, ret20d, ret60d,
     above20, above50, above200,
     atr14, atrExt50ma, volRatio,
+    rsi14,
     adrPct, trendTenure,
     newHigh20d, newHigh52w, distMa20, distMa50, distMa200,
     sparkline,
@@ -1026,6 +1047,8 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
   // Includes metrics + OI/funding from Hyperliquid + market cap from snapshot
   const hlMap = hlTickers instanceof Map ? hlTickers : null;
   const mcMap = snapshotMarketCaps || {};
+  const btcResult = rawResults.find(r => r.asset.symbol === 'BTC');
+  const btcRet20d = btcResult?.metrics?.ret20d ?? null;
   const cryptoAssets = rawResults
     .filter(r => r.metrics != null)
     .map(r => {
@@ -1035,6 +1058,7 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
       const oiRatio = (oiUsd != null && oiUsd > 0 && mcap != null && mcap > 0) ? oiUsd / mcap : null;
       const funding = hl?.fundingRate ?? null;
       const fundingAnn = funding != null ? funding * 3 * 365 * 100 : null;
+      const rs_btc_20d = (r.metrics.ret20d != null && btcRet20d != null) ? r.metrics.ret20d - btcRet20d : null;
       return {
         symbol: r.asset.symbol,
         name: r.asset.name,
@@ -1049,6 +1073,8 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
         distMa50: r.metrics.distMa50,
         atrExt50ma: r.metrics.atrExt50ma,
         volRatio: r.metrics.volRatio,
+        rsi14: r.metrics.rsi14,
+        rs_btc_20d,
         oiRatio,
         fundingAnn,
       };
