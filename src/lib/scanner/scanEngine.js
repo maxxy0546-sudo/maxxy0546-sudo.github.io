@@ -1,6 +1,7 @@
 import { calcEMA, calcVWAP, calcRSI } from './calculations';
 import { fetchCandles, fetch24hChange, preloadExchange, fetchTop500, CANDLES_PER_DAY } from './exchanges';
 import { fetchAllTickers as fetchHyperliquidTickers } from './sources/hyperliquid';
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 // ── CoinGecko Market Data Cache ─────────────────────────────────────────────────
 let _cgMarketCache = null;
@@ -76,6 +77,258 @@ async function fetchCGMarketData(cgKey) {
   }
 }
 
+// ── Aggregated Open Interest (6-exchange) ─────────────────────────────────────
+// Always fetched in parallel regardless of which exchange the user picked for
+// the screener scan. This gives us the broadest OI coverage (~60% of total
+// crypto perp OI) for the OI/MC ratio column.
+//
+// Sources:
+// 1. Hyperliquid — client-side, ~232 perps, includes OI + funding + price
+// 2. OKX         — client-side, ~421 SWAPs, OI only (no funding in /open-interest endpoint)
+// 3. Bybit       — client-side, ~679 USDT perps, includes OI + funding + price
+// 4. Bitget      — client-side, ~733 USDT perps, includes holdingAmount + funding + price
+// 5. Gate.io     — client-side, ~857 USDT perps, includes position_size + funding + mark_price
+// 6. Binance     — SERVER-SIDE in build_snapshot.js (binance_oi key, refreshed 4× daily)
+//                  Includes OI + funding (premiumIndex batch)
+//
+// Returns: { aggregatedOI: Map<symbol, {oiUsd, oiCoin, sources}>, fundingByExchange: { hl, okx, bybit, bitget, gate, binance } }
+//
+// fundingByExchange lets analyzeAsset pick the FUNDING RATE from the user-selected
+// exchange (rather than always using HL). If the selected exchange has no funding
+// data for this symbol, falls back to null.
+async function fetchHyperliquidOI() {
+  const map = new Map();
+  try {
+    const tickers = await fetchHyperliquidTickers();
+    if (tickers instanceof Map) {
+      for (const [symbol, t] of tickers) {
+        map.set(symbol, {
+          oiUsd: t.openInterestUsd ?? 0,
+          oiCoin: t.openInterest ?? 0,
+          funding: t.fundingRate ?? null,
+        });
+      }
+    }
+    console.info(`[scanEngine] HL OI: ${map.size} assets`);
+  } catch (e) {
+    console.warn('[scanEngine] Hyperliquid OI fetch failed:', e.message);
+  }
+  return map;
+}
+
+async function fetchOKXOI() {
+  const map = new Map();
+  try {
+    const res = await fetchWithTimeout('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
+    if (res.ok) {
+      const d = await res.json();
+      if (d?.code === '0' && Array.isArray(d.data)) {
+        for (const item of d.data) {
+          const parts = item.instId?.split('-');
+          if (!parts || parts.length < 2) continue;
+          const symbol = parts[0];
+          const oiUsd = parseFloat(item.oiUsd || '0');
+          const oiCoin = parseFloat(item.oiCcy || '0');
+          if (oiUsd > 0) map.set(symbol, { oiUsd, oiCoin, funding: null });
+        }
+        console.info(`[scanEngine] OKX OI: ${map.size} assets`);
+      }
+    }
+  } catch (e) {
+    console.warn('[scanEngine] OKX OI fetch failed:', e.message);
+  }
+  return map;
+}
+
+async function fetchBybitOI() {
+  const map = new Map();
+  try {
+    const res = await fetchWithTimeout('https://api.bybit.com/v5/market/tickers?category=linear');
+    if (res.ok) {
+      const d = await res.json();
+      if (d?.retCode === 0) {
+        for (const item of (d?.result?.list || [])) {
+          const sym = item.symbol || '';
+          if (!sym.endsWith('USDT')) continue;
+          const symbol = sym.replace('USDT', '');
+          const oiUsd = parseFloat(item.openInterestValue || '0');
+          const oiCoin = parseFloat(item.openInterest || '0');
+          const funding = parseFloat(item.fundingRate || '0');
+          if (oiUsd > 0) map.set(symbol, { oiUsd, oiCoin, funding });
+        }
+        console.info(`[scanEngine] Bybit OI: ${map.size} assets`);
+      }
+    }
+  } catch (e) {
+    console.warn('[scanEngine] Bybit OI fetch failed:', e.message);
+  }
+  return map;
+}
+
+async function fetchBitgetOI() {
+  const map = new Map();
+  try {
+    const res = await fetchWithTimeout('https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES');
+    if (res.ok) {
+      const d = await res.json();
+      if (d?.code === '00000') {
+        for (const item of (d.data || [])) {
+          const sym = item.symbol || '';
+          if (!sym.endsWith('USDT')) continue;
+          const symbol = sym.replace('USDT', '');
+          const oiCoin = parseFloat(item.holdingAmount || '0');
+          const price = parseFloat(item.lastPr || '0');
+          const oiUsd = oiCoin * price;
+          const funding = parseFloat(item.fundingRate || '0');
+          if (oiUsd > 0) map.set(symbol, { oiUsd, oiCoin, funding });
+        }
+        console.info(`[scanEngine] Bitget OI: ${map.size} assets`);
+      }
+    }
+  } catch (e) {
+    console.warn('[scanEngine] Bitget OI fetch failed:', e.message);
+  }
+  return map;
+}
+
+async function fetchGateOI() {
+  const map = new Map();
+  try {
+    const res = await fetchWithTimeout('https://api.gateio.ws/api/v4/futures/usdt/contracts');
+    if (res.ok) {
+      const d = await res.json();
+      if (Array.isArray(d)) {
+        for (const c of d) {
+          const name = c.name || '';
+          if (!name.endsWith('_USDT')) continue;
+          const symbol = name.replace('_USDT', '');
+          const positionSize = parseFloat(c.position_size || '0');
+          const quantoMultiplier = parseFloat(c.quanto_multiplier || '1');
+          const markPrice = parseFloat(c.mark_price || '0');
+          const oiUsd = positionSize * quantoMultiplier * markPrice;
+          const oiCoin = positionSize * quantoMultiplier;
+          const funding = parseFloat(c.funding_rate || '0');
+          if (oiUsd > 0) map.set(symbol, { oiUsd, oiCoin, funding });
+        }
+        console.info(`[scanEngine] Gate.io OI: ${map.size} assets`);
+      }
+    }
+  } catch (e) {
+    console.warn('[scanEngine] Gate.io OI fetch failed:', e.message);
+  }
+  return map;
+}
+
+// Read Binance OI from snapshot (server-side fetched, max 4h stale).
+// Returns Map<symbol, {oiUsd, oiCoin, funding}>.
+function readBinanceOIFromSnapshot(snap) {
+  const map = new Map();
+  if (!snap?.binance_oi) return map;
+  for (const [symbol, b] of Object.entries(snap.binance_oi)) {
+    if (b && b.oiUsd > 0) {
+      map.set(symbol, {
+        oiUsd: b.oiUsd,
+        oiCoin: b.oiCoin ?? 0,
+        funding: b.fundingRate ?? null,
+      });
+    }
+  }
+  console.info(`[scanEngine] Binance OI (snapshot): ${map.size} assets`);
+  return map;
+}
+
+// Fetch all 5 client-side OI sources in parallel, then build the 6-exchange
+// aggregated OI Map. Binance comes from snapshot.
+//
+// Returns: {
+//   aggregatedOI: Map<symbol, {oiUsd, oiCoin, sources}>,
+//   fundingByExchange: { hl, okx, bybit, bitget, gate, binance }  // each is Map<symbol, number|null>
+// }
+async function fetchAggregatedOI(snapshot) {
+  const [hlMap, okxMap, bybitMap, bitgetMap, gateMap] = await Promise.all([
+    fetchHyperliquidOI(),
+    fetchOKXOI(),
+    fetchBybitOI(),
+    fetchBitgetOI(),
+    fetchGateOI(),
+  ]);
+  const binanceMap = readBinanceOIFromSnapshot(snapshot);
+
+  const allSymbols = new Set([
+    ...hlMap.keys(),
+    ...okxMap.keys(),
+    ...bybitMap.keys(),
+    ...bitgetMap.keys(),
+    ...gateMap.keys(),
+    ...binanceMap.keys(),
+  ]);
+
+  const aggregatedOI = new Map();
+  for (const symbol of allSymbols) {
+    const hl = hlMap.get(symbol);
+    const okx = okxMap.get(symbol);
+    const bybit = bybitMap.get(symbol);
+    const bitget = bitgetMap.get(symbol);
+    const gate = gateMap.get(symbol);
+    const binance = binanceMap.get(symbol);
+
+    const hlOi = hl?.oiUsd ?? 0;
+    const okxOi = okx?.oiUsd ?? 0;
+    const bybitOi = bybit?.oiUsd ?? 0;
+    const bitgetOi = bitget?.oiUsd ?? 0;
+    const gateOi = gate?.oiUsd ?? 0;
+    const binanceOi = binance?.oiUsd ?? 0;
+
+    const totalOi = hlOi + okxOi + bybitOi + bitgetOi + gateOi + binanceOi;
+    if (totalOi > 0) {
+      const hlOiCoin = hl?.oiCoin ?? 0;
+      const okxOiCoin = okx?.oiCoin ?? 0;
+      const bybitOiCoin = bybit?.oiCoin ?? 0;
+      const bitgetOiCoin = bitget?.oiCoin ?? 0;
+      const gateOiCoin = gate?.oiCoin ?? 0;
+      const binanceOiCoin = binance?.oiCoin ?? 0;
+
+      aggregatedOI.set(symbol, {
+        oiUsd: totalOi,
+        oiCoin: hlOiCoin + okxOiCoin + bybitOiCoin + bitgetOiCoin + gateOiCoin + binanceOiCoin,
+        sources: (hlOi > 0 ? 1 : 0) + (okxOi > 0 ? 1 : 0) + (bybitOi > 0 ? 1 : 0) +
+                 (bitgetOi > 0 ? 1 : 0) + (gateOi > 0 ? 1 : 0) + (binanceOi > 0 ? 1 : 0),
+      });
+    }
+  }
+  console.info(`[scanEngine] Aggregated OI (6-exchange): ${aggregatedOI.size} assets`);
+
+  // Per-exchange funding Maps (for user-selected-exchange funding rate lookup)
+  const extractFunding = (m) => {
+    const out = new Map();
+    for (const [sym, v] of m) if (v?.funding != null) out.set(sym, v.funding);
+    return out;
+  };
+  const fundingByExchange = {
+    hl: extractFunding(hlMap),
+    okx: extractFunding(okxMap),
+    bybit: extractFunding(bybitMap),
+    bitget: extractFunding(bitgetMap),
+    gate: extractFunding(gateMap),
+    binance: extractFunding(binanceMap),
+  };
+
+  return { aggregatedOI, fundingByExchange };
+}
+
+// Map user-selected screener exchange → funding Map key in fundingByExchange.
+// Returns null for spot-only exchanges or exchanges whose funding we don't fetch.
+function fundingKeyForExchange(exchange) {
+  switch (exchange) {
+    case 'hyperliquid':   return 'hl';
+    case 'okx_perps':     return 'okx';
+    case 'bybit':         return 'bybit';
+    case 'binance_perps': return 'binance';
+    // okx (spot), binance (spot), kraken, coingecko — no perp funding available
+    default:              return null;
+  }
+}
+
 // ── Relative Volume (rVol) ─────────────────────────────────────────────────────
 // rVol = current candle volume / 20-period SMA of volume
 // rVol > 1 = volume surge, rVol < 1 = below-average volume
@@ -89,7 +342,7 @@ function computeRVol(candles, period = 20) {
   return vols[vols.length - 1] / sma;
 }
 
-async function analyzeAsset(asset, settings, cgMarketData, hlTickers) {
+async function analyzeAsset(asset, settings, cgMarketData, oiData) {
   const {
     fastType, emaFast, vwapFastDays, midType, emaMid, vwapMidDays, slowType, emaSlow, vwapDays,
     exchange, timeframe, minVolume, minMarketCap,
@@ -240,9 +493,16 @@ async function analyzeAsset(asset, settings, cgMarketData, hlTickers) {
     // Relative volume (current vol / 20-period SMA vol)
     const rVol = computeRVol(candles, 20);
 
-    // Hyperliquid per-asset data (funding, open interest) — only if available
-    // hlTickers is a Map (from fetchAllTickers) — use .get()
-    const hlData = hlTickers instanceof Map ? hlTickers.get(asset.symbol) : null;
+    // ── OI + Funding (always 6-exchange aggregated, regardless of selected exchange) ──
+    // aggregatedOI: SUM of HL + OKX + Bybit + Bitget + Gate + Binance(server-side)
+    // fundingRate: from the user-selected exchange (if available); null otherwise.
+    //   Selected exchange → funding map: hyperliquid→hl, okx_perps→okx,
+    //   bybit→bybit, binance_perps→binance. Spot exchanges (okx/binance/kraken/
+    //   coingecko) have no perp funding, so funding rate will be null.
+    const agg = oiData?.aggregatedOI instanceof Map ? oiData.aggregatedOI.get(asset.symbol) : null;
+    const fundingKey = oiData?.selectedFundingKey;  // 'hl' | 'okx' | 'bybit' | 'binance' | null
+    const fundingMap = fundingKey ? oiData.fundingByExchange?.[fundingKey] : null;
+    const funding = fundingMap instanceof Map ? (fundingMap.get(asset.symbol) ?? null) : null;
 
     return {
       ...asset,
@@ -273,10 +533,11 @@ async function analyzeAsset(asset, settings, cgMarketData, hlTickers) {
       tags: marketInfo.tags || [],
       platform: marketInfo.platform || null,
       category: marketInfo.category || null,
-      // Hyperliquid-specific (null if not on Hyperliquid)
-      fundingRate: hlData?.fundingRate ?? null,
-      openInterest: hlData?.openInterestUsd ?? null,  // USD value (base OI × mark price)
-      openInterestRaw: hlData?.openInterest ?? null,  // base currency (for reference)
+      // 6-exchange aggregated OI (always populated regardless of selected exchange)
+      fundingRate: funding,                                      // from user-selected exchange
+      openInterest: agg?.oiUsd ?? null,                          // aggregated USD value
+      openInterestRaw: agg?.oiCoin ?? null,                      // aggregated base currency
+      oiSources: agg?.sources ?? 0,                              // how many exchanges contributed
       // Relative volume
       rVol,
       rsi,
@@ -313,17 +574,30 @@ export async function runScan(settings, onProgress) {
   onProgress({ phase: 'fetching_market_data', message: 'Fetching market data (volume, market cap)…' });
   const cgMarketData = await fetchCGMarketData(settings.cgKey);
 
-  // Fetch Hyperliquid bulk tickers (funding, OI, volume) in ONE call
-  // This gives us per-asset funding rate + open interest for all 230+ perps
-  let hlTickers = null;
-  if (settings.exchange === 'hyperliquid') {
-    onProgress({ phase: 'fetching_market_data', message: 'Fetching Hyperliquid funding + open interest…' });
-    try {
-      hlTickers = await fetchHyperliquidTickers();
-    } catch (e) {
-      console.warn('[scanEngine] Hyperliquid ticker fetch failed:', e.message);
-    }
-  } else {
+  // ── Always fetch 6-exchange aggregated OI (HL + OKX + Bybit + Bitget + Gate + Binance) ──
+  // OI/MC ratio uses the SUM across all 6 exchanges regardless of which exchange the
+  // user picked for the screener scan — this gives the broadest OI coverage (~60% of
+  // total crypto perp OI vs ~4% from HL alone).
+  //
+  // Funding rate is user-selected-exchange-specific: we look up the funding rate from
+  // whichever exchange the user picked (HL/OKX/Bybit/Binance perps). Spot exchanges
+  // (kraken, coingecko, okx/binance spot) have no perp funding, so funding will be null.
+  onProgress({ phase: 'fetching_market_data', message: 'Fetching 6-exchange aggregated OI (HL + OKX + Bybit + Bitget + Gate + Binance)…' });
+  let snapshot = null;
+  try {
+    const snapRes = await fetch('/snapshot.json');
+    if (snapRes.ok) snapshot = await snapRes.json();
+  } catch (e) {
+    console.warn('[scanEngine] Snapshot fetch failed (Binance OI unavailable):', e.message);
+  }
+
+  let oiData = { aggregatedOI: new Map(), fundingByExchange: {}, selectedFundingKey: null };
+  try {
+    const { aggregatedOI, fundingByExchange } = await fetchAggregatedOI(snapshot);
+    const selectedFundingKey = fundingKeyForExchange(settings.exchange);
+    oiData = { aggregatedOI, fundingByExchange, selectedFundingKey };
+  } catch (e) {
+    console.warn('[scanEngine] Aggregated OI fetch failed:', e.message);
   }
 
   onProgress({
@@ -364,7 +638,7 @@ export async function runScan(settings, onProgress) {
   });
 
   const failedAssets = [];
-  const tasks = assets.map(asset => () => analyzeAsset(asset, settings, cgMarketData, hlTickers));
+  const tasks = assets.map(asset => () => analyzeAsset(asset, settings, cgMarketData, oiData));
 
   await runWithPool(tasks, settings.concurrency || 5, (done, match) => {
     scannedCount = done;
@@ -394,7 +668,7 @@ export async function runScan(settings, onProgress) {
       results: [...results]
     });
     const retrySettings = { ...settings, exchange: 'auto' };
-    const retryTasks = failedAssets.map(asset => () => analyzeAsset(asset, retrySettings, cgMarketData, hlTickers));
+    const retryTasks = failedAssets.map(asset => () => analyzeAsset(asset, retrySettings, cgMarketData, oiData));
     await runWithPool(retryTasks, 3, (_, match) => {
       if (match) {
         results.push(match);
@@ -413,7 +687,11 @@ export async function runScan(settings, onProgress) {
   // metric from the TradingRiot material — high OI/MC = crowded positioning
   // relative to the asset's size, regardless of absolute OI.
   //
-  // Only computed when both openInterest (Hyperliquid) and marketCap (snapshot)
+  // Uses the 6-exchange aggregated OI (HL + OKX + Bybit + Bitget + Gate + Binance)
+  // — NOT the selected exchange's OI. This gives a much more accurate picture
+  // of total market positioning than any single exchange would.
+  //
+  // Only computed when both openInterest (aggregated) and marketCap (snapshot)
   // are available. Null otherwise.
   for (const r of results) {
     if (r.openInterest != null && r.openInterest > 0 && r.marketCap != null && r.marketCap > 0) {

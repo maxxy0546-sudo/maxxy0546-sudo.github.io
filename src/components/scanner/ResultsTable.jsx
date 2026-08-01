@@ -452,8 +452,8 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
         </span>
       </td>
 
-      {/* FUNDING RATE (Hyperliquid) */}
-      <td className="py-2 px-2.5 text-right">
+      {/* FUNDING RATE (user-selected exchange — HL/OKX/Bybit/Binance perps; null for spot exchanges) */}
+      <td className="py-2 px-2.5 text-right" title={row.fundingRate == null ? 'No funding rate available (selected exchange is spot-only, or symbol not listed on selected exchange perp market)' : 'Funding rate from selected exchange. Positive (green) = longs pay shorts. Negative (red) = shorts pay longs.'}>
         <span className="text-[11px] font-semibold tabular-nums" style={{
           color: row.fundingRate == null ? 'var(--scanner-text3)' :
                  row.fundingRate > 0 ? 'var(--scanner-green)' :
@@ -463,7 +463,7 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
         </span>
       </td>
 
-      {/* OPEN INTEREST in coin terms (Hyperliquid) */}
+      {/* OPEN INTEREST in coin terms (6-exchange aggregated: HL + OKX + Bybit + Bitget + Gate + Binance) */}
       <td className="py-2 px-2.5 text-right">
         <span className="text-[11px] font-semibold tabular-nums" style={{ color: 'var(--scanner-text2)' }}>
           {fmtOICoin(row.openInterestRaw, row.symbol)}
@@ -482,8 +482,8 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
                    'var(--scanner-text3)'                            // <5% = low
           }}
           title={row.oiRatio != null
-            ? `OI/MC: ${(row.oiRatio * 100).toFixed(1)}% of market cap in open interest. High ratio = crowded positioning relative to asset size. >30% = extreme (squeeze risk). <5% = low positioning.`
-            : 'OI/MC unavailable (requires Hyperliquid OI + market cap data)'}
+            ? `OI/MC: ${(row.oiRatio * 100).toFixed(1)}% of market cap in open interest (6-exchange aggregated: HL + OKX + Bybit + Bitget + Gate + Binance${row.oiSources ? `, ${row.oiSources} source${row.oiSources === 1 ? '' : 's'}` : ''}). High ratio = crowded positioning relative to asset size. >30% = extreme (squeeze risk). <5% = low positioning.`
+            : 'OI/MC unavailable (no perp OI exists for this symbol on any of the 6 exchanges, or market cap missing)'}
         >
           {row.oiRatio != null ? `${(row.oiRatio * 100).toFixed(1)}%` : '—'}
         </span>
