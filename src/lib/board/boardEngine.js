@@ -852,41 +852,38 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
   } catch (e) {
     console.warn('[boardEngine] Hyperliquid ticker fetch failed:', e.message);
   }
+  if (!(hlTickers instanceof Map)) hlTickers = new Map();
 
-  // ── Fallback: fetch OKX OI if Hyperliquid failed or returned too few assets ──
-  // OKX has a batch open-interest endpoint that returns all SWAP instruments in one call.
-  // We merge OKX OI into hlTickers for any symbol Hyperliquid doesn't cover.
-  if (!hlTickers || hlTickers.size < 50) {
-    try {
-      const okxRes = await fetchWithTimeout('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
-      if (okxRes.ok) {
-        const okxData = await okxRes.json();
-        if (okxData?.code === '0' && Array.isArray(okxData.data)) {
-          if (!(hlTickers instanceof Map)) hlTickers = new Map();
-          let added = 0;
-          for (const item of okxData.data) {
-            // instId format: "BTC-USDT-SWAP" → symbol "BTC"
-            const parts = item.instId?.split('-');
-            if (!parts || parts.length < 2) continue;
-            const symbol = parts[0];
-            if (!hlTickers.has(symbol)) {
-              const oiUsd = parseFloat(item.oiUsd || '0');
-              const oiCoin = parseFloat(item.oiCcy || '0');
-              hlTickers.set(symbol, {
-                openInterest: oiCoin,
-                openInterestUsd: oiUsd,
-                fundingRate: null,  // OKX funding requires per-instrument call — not fetched here
-                price: null,
-              });
-              added++;
-            }
+  // ── Supplementary OI from OKX ──────────────────────────────────────────
+  // Hyperliquid only covers ~232 perps. Many crypto universe assets aren't
+  // on Hyperliquid. OKX has a batch open-interest endpoint (432 SWAP instruments
+  // in 1 call). We merge OKX OI for any symbol Hyperliquid doesn't cover.
+  // This ensures the Crypto tab's OI/MC column has data for more assets.
+  try {
+    const okxRes = await fetchWithTimeout('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
+    if (okxRes.ok) {
+      const okxData = await okxRes.json();
+      if (okxData?.code === '0' && Array.isArray(okxData.data)) {
+        let added = 0;
+        for (const item of okxData.data) {
+          const parts = item.instId?.split('-');
+          if (!parts || parts.length < 2) continue;
+          const symbol = parts[0];
+          if (!hlTickers.has(symbol)) {
+            hlTickers.set(symbol, {
+              openInterest: parseFloat(item.oiCcy || '0'),
+              openInterestUsd: parseFloat(item.oiUsd || '0'),
+              fundingRate: null,
+              price: null,
+            });
+            added++;
           }
-          if (added > 0) console.info(`[boardEngine] OKX OI fallback added ${added} assets`);
         }
+        if (added > 0) console.info(`[boardEngine] OKX OI supplement added ${added} assets`);
       }
-    } catch (e) {
-      console.warn('[boardEngine] OKX OI fallback failed:', e.message);
     }
+  } catch (e) {
+    console.warn('[boardEngine] OKX OI supplement failed:', e.message);
   }
 
   // Retry pass for failed assets

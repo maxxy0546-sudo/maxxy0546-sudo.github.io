@@ -674,12 +674,11 @@ function CryptoAssetsTable({ assets }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function DailyBoard({
-  themes, benchmarks, themeRotation, startingToMove, styleRotation, riskPulse, themeSectorRotation, cryptoAssets
+  themes, benchmarks, themeRotation, startingToMove, styleRotation, riskPulse, themeSectorRotation
 }) {
   return (
     <div className="font-mono space-y-8 px-5 md:px-8 py-5">
       <ETFFlowTable />
-      {cryptoAssets && cryptoAssets.length > 0 && <CryptoAssetsTable assets={cryptoAssets} />}
       <BenchmarkSnapshot benchmarks={benchmarks} />
       <StartingToMove startingToMove={startingToMove} />
       <ThemeStatus themes={themes} />

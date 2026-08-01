@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import BoardHeader from '@/components/board/BoardHeader';
 import DailyBoard from '@/components/board/DailyBoard';
+import CryptoTab from '@/components/board/CryptoTab';
 import ThemesTab from '@/components/board/ThemesTab';
 import BreadthTab from '@/components/board/BreadthTab';
 import ExtensionTab from '@/components/board/ExtensionTab';
@@ -20,7 +21,7 @@ import { getGloballyBlockedSources } from '@/lib/scanner/sourceResolver';
 // comparison is the first thing users see when they explore beyond Daily.
 // Indices/sectors/commodities/FX/rates (~80 assets) — same Yahoo data the
 // BoardHeader's new TradFi breadth spectrum uses.
-const TABS = ['Daily', 'TradFi', 'Themes', 'Breadth', 'Momentum Scan', 'Momentum', 'Extension', 'Factor Monitor'];
+const TABS = ['Daily', 'Crypto', 'TradFi', 'Themes', 'Breadth', 'Momentum Scan', 'Momentum', 'Extension', 'Factor Monitor'];
 
 const DEFAULT_EXCHANGE = 'auto';
 
@@ -448,16 +449,18 @@ export default function Board() {
               styleRotation={styleRotation}
               riskPulse={riskPulse}
               themeSectorRotation={themeSectorRotation}
-              cryptoAssets={data?.cryptoAssets}
             />
           )}
-          {activeTab === 1 && <MacroTab tradData={tradData} isLoading={tradLoading} snapshotLoading={tradSnapshotLoading} onRefresh={runTradAnalysis} />}
-          {activeTab === 2 && <ThemesTab themes={themes} constituents={constituents} />}
-          {activeTab === 3 && <BreadthTab breadthSeries={breadthSeries} />}
-          {activeTab === 4 && <MomentumScanTab momentumScan={momentumScan} />}
-          {activeTab === 5 && <MomentumTab cleanMomentum={cleanMomentum} />}
-          {activeTab === 6 && <ExtensionTab tooHot={tooHot} fading={fading} />}
-          {activeTab === 7 && <FactorMonitor />}
+          {activeTab === 1 && (
+            <CryptoTab cryptoAssets={data?.cryptoAssets} />
+          )}
+          {activeTab === 2 && <MacroTab tradData={tradData} isLoading={tradLoading} snapshotLoading={tradSnapshotLoading} onRefresh={runTradAnalysis} />}
+          {activeTab === 3 && <ThemesTab themes={themes} constituents={constituents} />}
+          {activeTab === 4 && <BreadthTab breadthSeries={breadthSeries} />}
+          {activeTab === 5 && <MomentumScanTab momentumScan={momentumScan} />}
+          {activeTab === 6 && <MomentumTab cleanMomentum={cleanMomentum} />}
+          {activeTab === 7 && <ExtensionTab tooHot={tooHot} fading={fading} />}
+          {activeTab === 8 && <FactorMonitor />}
         </>
       )}
 
