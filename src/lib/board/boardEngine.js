@@ -855,10 +855,8 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
   if (!(hlTickers instanceof Map)) hlTickers = new Map();
 
   // ── Supplementary OI from OKX ──────────────────────────────────────────
-  // Hyperliquid only covers ~232 perps. Many crypto universe assets aren't
-  // on Hyperliquid. OKX has a batch open-interest endpoint (432 SWAP instruments
-  // in 1 call). We merge OKX OI for any symbol Hyperliquid doesn't cover.
-  // This ensures the Crypto tab's OI/MC column has data for more assets.
+  // Hyperliquid only covers ~232 perps. OKX has a batch open-interest endpoint
+  // (432 SWAP instruments in 1 call). Merge OKX OI for any symbol HL doesn't cover.
   try {
     const okxRes = await fetchWithTimeout('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
     if (okxRes.ok) {
@@ -884,6 +882,38 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
     }
   } catch (e) {
     console.warn('[boardEngine] OKX OI supplement failed:', e.message);
+  }
+
+  // ── Supplementary OI + funding from Bybit ──────────────────────────────
+  // Bybit has a batch ticker endpoint (783 linear perps in 1 call) that
+  // includes openInterest, openInterestValue, AND fundingRate. This covers
+  // many assets that neither Hyperliquid nor OKX have. Single API call.
+  try {
+    const bybitRes = await fetchWithTimeout('https://api.bybit.com/v5/market/tickers?category=linear');
+    if (bybitRes.ok) {
+      const bybitData = await bybitRes.json();
+      if (bybitData?.retCode === 0) {
+        const items = bybitData?.result?.list || [];
+        let added = 0;
+        for (const item of items) {
+          const sym = item.symbol || '';
+          if (!sym.endsWith('USDT')) continue;
+          const symbol = sym.replace('USDT', '');
+          if (!hlTickers.has(symbol)) {
+            hlTickers.set(symbol, {
+              openInterest: parseFloat(item.openInterest || '0'),
+              openInterestUsd: parseFloat(item.openInterestValue || '0'),
+              fundingRate: parseFloat(item.fundingRate || '0'),
+              price: parseFloat(item.lastPrice || '0'),
+            });
+            added++;
+          }
+        }
+        if (added > 0) console.info(`[boardEngine] Bybit OI supplement added ${added} assets`);
+      }
+    }
+  } catch (e) {
+    console.warn('[boardEngine] Bybit OI supplement failed:', e.message);
   }
 
   // Retry pass for failed assets

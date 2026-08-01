@@ -102,32 +102,55 @@ export default function Board() {
         } catch (e) {
           console.warn('[Board] Hyperliquid ticker fetch for Extreme OI failed:', e.message);
         }
+        if (!(hlTickers instanceof Map)) hlTickers = new Map();
 
-        // If Hyperliquid failed, try OKX OI fallback
-        if (!hlTickers || hlTickers.size < 50) {
-          try {
-            const res = await fetch('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
-            if (res.ok) {
-              const d = await res.json();
-              if (d?.code === '0' && Array.isArray(d.data)) {
-                if (!(hlTickers instanceof Map)) hlTickers = new Map();
-                for (const item of d.data) {
-                  const parts = item.instId?.split('-');
-                  if (!parts || parts.length < 2) continue;
-                  const symbol = parts[0];
-                  if (!hlTickers.has(symbol)) {
-                    hlTickers.set(symbol, {
-                      openInterest: parseFloat(item.oiCcy || '0'),
-                      openInterestUsd: parseFloat(item.oiUsd || '0'),
-                      fundingRate: null,
-                    });
-                  }
+        // Supplementary OI from OKX (batch, ~432 SWAP instruments)
+        try {
+          const res = await fetch('https://www.okx.com/api/v5/public/open-interest?instType=SWAP');
+          if (res.ok) {
+            const d = await res.json();
+            if (d?.code === '0' && Array.isArray(d.data)) {
+              for (const item of d.data) {
+                const parts = item.instId?.split('-');
+                if (!parts || parts.length < 2) continue;
+                const symbol = parts[0];
+                if (!hlTickers.has(symbol)) {
+                  hlTickers.set(symbol, {
+                    openInterest: parseFloat(item.oiCcy || '0'),
+                    openInterestUsd: parseFloat(item.oiUsd || '0'),
+                    fundingRate: null,
+                  });
                 }
               }
             }
-          } catch (e) {
-            console.warn('[Board] OKX OI fallback failed:', e.message);
           }
+        } catch (e) {
+          console.warn('[Board] OKX OI supplement failed:', e.message);
+        }
+
+        // Supplementary OI + funding from Bybit (batch, ~679 USDT perps)
+        try {
+          const res = await fetch('https://api.bybit.com/v5/market/tickers?category=linear');
+          if (res.ok) {
+            const d = await res.json();
+            if (d?.retCode === 0) {
+              const items = d?.result?.list || [];
+              for (const item of items) {
+                const sym = item.symbol || '';
+                if (!sym.endsWith('USDT')) continue;
+                const symbol = sym.replace('USDT', '');
+                if (!hlTickers.has(symbol)) {
+                  hlTickers.set(symbol, {
+                    openInterest: parseFloat(item.openInterest || '0'),
+                    openInterestUsd: parseFloat(item.openInterestValue || '0'),
+                    fundingRate: parseFloat(item.fundingRate || '0'),
+                  });
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Board] Bybit OI supplement failed:', e.message);
         }
 
         if (cancelled) return;
