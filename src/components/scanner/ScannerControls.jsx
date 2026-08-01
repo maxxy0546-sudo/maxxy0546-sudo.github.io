@@ -98,8 +98,8 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
           value={settings.exchange}
           onChange={e => update('exchange', e.target.value)}
         >
-          <option value="hyperliquid"    style={{ background: 'var(--scanner-bg2)' }}>Hyperliquid (Default)</option>
-          <option value="okx_perps"      style={{ background: 'var(--scanner-bg2)' }}>OKX Perps (widest no-VPN coverage)</option>
+          <option value="hyperliquid"    style={{ background: 'var(--scanner-bg2)' }}>Hyperliquid</option>
+          <option value="okx_perps"      style={{ background: 'var(--scanner-bg2)' }}>OKX Perps (Default — widest no-VPN coverage)</option>
           <option value="okx"            style={{ background: 'var(--scanner-bg2)' }}>OKX (Spot)</option>
           <option value="binance_perps"  style={{ background: 'var(--scanner-bg2)' }}>Binance Perps ⚠ VPN</option>
           <option value="binance"        style={{ background: 'var(--scanner-bg2)' }}>Binance Spot ⚠ VPN</option>

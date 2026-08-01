@@ -21,7 +21,7 @@ const DEFAULT_SETTINGS = {
   slowType: 'vwap',
   emaSlow: 200,
   vwapDays: 30,
-  exchange: 'hyperliquid',
+  exchange: 'okx_perps',
   timeframe: '4H',
   concurrency: 10,
   // Filters
