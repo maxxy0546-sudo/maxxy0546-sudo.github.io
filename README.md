@@ -194,6 +194,20 @@ Series marked "snapshot (FRED only)" cannot be fetched from the browser (FRED is
 - If snapshot changed, commits to main → dispatches `deploy.yml` for rebuild
 - Verifies the deploy workflow actually started (polls for the resulting run)
 
+### `.github/workflows/snapshot-health-check.yml`
+
+- Triggers: every 2 hours, 24/7 (`0 */2 * * *`)
+- Fetches live `snapshot.json`, checks `generated_at` age
+- Thresholds: FRESH <8h, STALE 8-24h, CRITICAL >24h
+- Auto-opens GitHub Issues with `stale-snapshot` / `stale-snapshot-critical` labels
+- Auto-closes issues when snapshot recovers (prevents issue rot)
+- Deliberate threshold gap with user-facing FreshnessBanner (6h/12h vs 8h/24h) — users see warnings before maintainers get paged
+
+### Cloudflare Workers
+
+- **`yahoo-proxy-worker.js`** — on-demand Yahoo Finance proxy with CORS allowlist + shared-secret token + IP rate limiting (60 req/min)
+- **`refresh-trigger-worker.js`** — cron every 4h (`0 */4 * * *`), calls GitHub `workflow_dispatch` API to trigger `refresh-snapshot.yml`. Breaks dependency on unreliable GitHub Actions cron. See `cloudflare/REFRESH_TRIGGER_SETUP.md` for deployment guide.
+
 ## Development commands
 
 ```bash
@@ -211,7 +225,8 @@ npm run typecheck        # TypeScript check
 ├── .github/
 │   ├── workflows/
 │   │   ├── deploy.yml                # Build + deploy to gh-pages
-│   │   └── refresh-snapshot.yml      # Refresh snapshot data 4× daily
+│   │   ├── refresh-snapshot.yml      # Refresh snapshot data 4× daily
+│   │   └── snapshot-health-check.yml # Every 2h: staleness check + auto-issue
 │   ├── ISSUE_TEMPLATE/               # Bug / feature / data issue templates
 │   └── PULL_REQUEST_TEMPLATE.md      # PR checklist
 ├── public/
@@ -226,10 +241,15 @@ npm run typecheck        # TypeScript check
 │   ├── build_snapshot.js             # Server-side data fetcher (runs in CI)
 │   └── verify-csp.py                 # CSP allowlist verification
 ├── cloudflare/
-│   └── yahoo-proxy-worker.js         # Cloudflare Worker for Yahoo Finance proxy
+│   ├── yahoo-proxy-worker.js         # Yahoo Finance proxy (CORS + token + rate limit)
+│   ├── refresh-trigger-worker.js     # Cron every 4h → dispatches refresh-snapshot.yml
+│   └── REFRESH_TRIGGER_SETUP.md      # Deployment guide for refresh trigger Worker
 ├── LICENSE                           # MIT
 ├── SECURITY.md                       # Vulnerability disclosures + key rotation
 └── src/
+    ├── hooks/
+    │   ├── useSnapshot.js             # Snapshot fetch + cache (TanStack Query)
+    │   └── useSnapshotFreshness.js    # Centralized staleness logic (FRESH/STALE/CRITICAL)
     └── lib/
         ├── scanner/
         │   ├── sourceResolver.js     # Multi-source auto-fallback dispatcher
@@ -249,6 +269,11 @@ npm run typecheck        # TypeScript check
         │   └── exchanges.js          # Legacy dispatcher (delegates to resolver + GeoBlockedError)
         ├── signal/
         │   └── compute.js            # Pure signal engine (backtested v3.1, 9 gates)
+        ├── factors/                   # Factor signal engine (composite, rotation, crowding)
+        │   ├── compositeEngine.js    # Unified stance computation (CONSTRUCTIVE/SELECTIVE/DEFENSIVE/WAIT)
+        │   ├── rotationDetector.js   # 3-session confirm rotation detection
+        │   ├── crowdingMatrix.js     # Cross-asset crowding heatmap
+        │   └── narrativeGenerator.js # Auto-generated factor narrative text
         └── regime/
             ├── macroResolver.js      # Multi-source macro fallback chain
             ├── macroSources/
