@@ -26,7 +26,7 @@ Multi-source crypto + tradfi market scanner with macro regime monitoring. Deploy
   │     ├─ Writes public/snapshot.json (small) → commits to main
   │     ├─ Writes public/snapshot.tradfi.json (large) → pushes to gh-pages branch (bypasses main)
   │     └─ Dispatches deploy.yml to rebuild + redeploy
-  └─ deploy.yml (on push to main + daily at 22:00 UTC)
+  └─ deploy.yml (on push to main + daily at 23:00 UTC)
         ├─ Builds the Vite bundle
         ├─ Fetches snapshot.tradfi.json from gh-pages branch
         ├─ Copies both snapshot files into dist/
@@ -183,12 +183,12 @@ Series marked "snapshot (FRED only)" cannot be fetched from the browser (FRED is
 
 ### `.github/workflows/deploy.yml`
 
-- Triggers on: push to main, daily at 22:00 UTC, manual dispatch
+- Triggers on: push to main, daily at 23:00 UTC, manual dispatch
 - Builds the site, fetches FRED data, deploys to `gh-pages` branch
 
 ### `.github/workflows/refresh-snapshot.yml`
 
-- Triggers: 04:00, 10:00, 16:00, 22:00 UTC Mon-Sat, manual dispatch
+- Triggers: 04:00, 10:00, 16:00, 22:00 UTC (7 days/week), manual dispatch
 - Saturday 04:00 UTC captures Friday's final market-close data flows
 - Only refreshes `snapshot.json` + `snapshot.tradfi.json` (no full bundle rebuild)
 - If snapshot changed, commits to main → dispatches `deploy.yml` for rebuild
