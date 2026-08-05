@@ -13,6 +13,9 @@ const EXCHANGE_NAMES = {
   hyperliquid: 'Hyperliquid',
   bybit: 'Bybit',
   coingecko: 'CoinGecko',
+  // TradFi mode sources
+  auto: 'Auto (Binance→OKX→Snapshot)',
+  snapshot: 'Snapshot (Daily)',
 };
 
 function fmtVol(v) {
@@ -23,10 +26,12 @@ function fmtVol(v) {
   return `$${v}`;
 }
 
-export default function ScannerHeader({ settings, scanMeta }) {
+export default function ScannerHeader({ settings, scanMeta, onModeChange }) {
   const fastLabel = indicatorLabel(settings.fastType, settings.emaFast, settings.vwapFastDays);
   const midLabel  = indicatorLabel(settings.midType,  settings.emaMid,  settings.vwapMidDays);
   const slowLabel = indicatorLabel(settings.slowType, settings.emaSlow, settings.vwapDays);
+  const mode = settings.mode || 'crypto';
+  const isTradFi = mode === 'tradfi';
 
   return (
     <div className="font-mono" style={{
@@ -35,25 +40,52 @@ export default function ScannerHeader({ settings, scanMeta }) {
     }}>
       <div className="flex items-start justify-between gap-6 px-5 md:px-8 pt-5 pb-4 flex-wrap">
         <div>
-          {/* Title */}
-          <h1 className="text-xl md:text-2xl font-bold tracking-tight leading-none" style={{ color: 'var(--scanner-text)' }}>
-            Trend{' '}
-            <span style={{
-              background: 'linear-gradient(90deg, var(--scanner-accent), #ffcc44)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}>Screener</span>
-          </h1>
+          {/* Title + Mode Toggle */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight leading-none" style={{ color: 'var(--scanner-text)' }}>
+              Trend{' '}
+              <span style={{
+                background: 'linear-gradient(90deg, var(--scanner-accent), #ffcc44)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent'
+              }}>{isTradFi ? 'TradFi' : 'Crypto'}</span>{' '}
+              Screener
+            </h1>
+
+            {/* Mode toggle — segmented control */}
+            {onModeChange && (
+              <div className="flex rounded overflow-hidden" style={{ border: '1px solid var(--scanner-border2)' }}>
+                <button
+                  onClick={() => onModeChange('crypto')}
+                  className="px-2.5 py-1 text-[10px] font-bold tracking-[0.1em] uppercase transition-colors"
+                  style={{
+                    background: !isTradFi ? 'var(--scanner-accent)' : 'var(--scanner-bg2)',
+                    color: !isTradFi ? '#0a0d14' : 'var(--scanner-text3)',
+                  }}
+                >Crypto</button>
+                <button
+                  onClick={() => onModeChange('tradfi')}
+                  className="px-2.5 py-1 text-[10px] font-bold tracking-[0.1em] uppercase transition-colors"
+                  style={{
+                    background: isTradFi ? 'var(--scanner-accent)' : 'var(--scanner-bg2)',
+                    color: isTradFi ? '#0a0d14' : 'var(--scanner-text3)',
+                  }}
+                >TradFi</button>
+              </div>
+            )}
+          </div>
 
           {/* Short description */}
           <p className="mt-2 text-[10px] leading-relaxed max-w-lg" style={{ color: 'var(--scanner-text3)' }}>
-            Identify high-momentum assets across the top 500 market cap pairs.
+            {isTradFi
+              ? 'Identify high-momentum tradfi tickers across 389 stocks, ETFs, commodities, and indices.'
+              : 'Identify high-momentum assets across the top 500 market cap pairs.'}
           </p>
           <p className="mt-1 text-[10px] leading-relaxed max-w-lg" style={{ color: 'var(--scanner-text3)' }}>
             Returns assets satisfying: <span style={{ color: 'var(--scanner-text2)' }}>Price &gt; Base Trend</span> AND <span style={{ color: 'var(--scanner-text2)' }}>Fast MA &gt; Slow MA</span>.
             Fully customizable by timeframe, calculation type, moving average lengths, and optional
-            <span style={{ color: 'var(--scanner-text2)' }}> 24H volume</span> and
-            <span style={{ color: 'var(--scanner-text2)' }}> market cap</span> filters to screen out illiquid or micro-cap assets.
+            <span style={{ color: 'var(--scanner-text2)' }}> 24H volume</span>{isTradFi ? '' : ' and'}
+            <span style={{ color: 'var(--scanner-text2)' }}>{isTradFi ? '' : ' market cap'}</span> filters to screen out illiquid{isTradFi ? '' : ' or micro-cap'} assets.
           </p>
 
           {/* Current Scan Settings label */}
@@ -70,7 +102,7 @@ export default function ScannerHeader({ settings, scanMeta }) {
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'var(--scanner-text3)' }} />
-              <CondBadge color="var(--scanner-fast)">Fast {fastLabel}</CondBadge>
+              <span>Fast {fastLabel}</span>
               <span style={{ color: 'var(--scanner-text3)' }}>above</span>
               <CondBadge color="var(--scanner-slow)">Slow {midLabel}</CondBadge>
             </div>
@@ -82,7 +114,7 @@ export default function ScannerHeader({ settings, scanMeta }) {
             <div className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'var(--scanner-text3)' }} />
               <span>Universe</span>
-              <CondBadge color="var(--scanner-text2)">Top 500</CondBadge>
+              <CondBadge color="var(--scanner-text2)">{isTradFi ? '389 TradFi' : 'Top 500'}</CondBadge>
             </div>
             {settings.minVolume > 0 && (
               <div className="flex items-center gap-1.5">
@@ -91,7 +123,7 @@ export default function ScannerHeader({ settings, scanMeta }) {
                 <CondBadge color="var(--scanner-accent)">{fmtVol(settings.minVolume)}</CondBadge>
               </div>
             )}
-            {settings.minMarketCap > 0 && (
+            {!isTradFi && settings.minMarketCap > 0 && (
               <div className="flex items-center gap-1.5">
                 <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'var(--scanner-accent)' }} />
                 <span>Min MCap</span>
@@ -103,7 +135,7 @@ export default function ScannerHeader({ settings, scanMeta }) {
 
         {/* Right meta */}
         <div className="flex items-center gap-4 flex-shrink-0">
-          <MetaChip label="Exchange" value={EXCHANGE_NAMES[settings.exchange] || settings.exchange.toUpperCase()} />
+          <MetaChip label="Source" value={EXCHANGE_NAMES[settings.exchange] || settings.exchange.toUpperCase()} />
           <MetaChip label="Updated"  value={scanMeta.updatedAt || '—'} />
           <MetaChip label="Duration" value={scanMeta.duration ? `${scanMeta.duration}s` : '—'} />
         </div>

@@ -8,10 +8,12 @@ import MassiveApiKeyInput from '@/components/scanner/MassiveApiKeyInput';
 import TradingViewChart from '@/components/scanner/TradingViewChart';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { runScan } from '@/lib/scanner/scanEngine';
+import { runTradFiScan } from '@/lib/scanner/tradfiScanEngine';
 
 const STORAGE_KEY = 'trendscan_scanner_settings';
 
 const DEFAULT_SETTINGS = {
+  mode: 'crypto',        // 'crypto' | 'tradfi' — scanner mode toggle
   fastType: 'ema',
   emaFast: 21,
   vwapFastDays: 3,
@@ -149,7 +151,8 @@ export default function Scanner() {
     setProgress({ done: 0, total: 0, matched: 0, message: '—' });
 
     try {
-      await runScan(settings, handleProgress);
+      const scanFn = settings.mode === 'tradfi' ? runTradFiScan : runScan;
+      await scanFn(settings, handleProgress);
     } catch (err) {
       setStatus('error');
       setError(err.message);
@@ -158,6 +161,20 @@ export default function Scanner() {
       setIsScanning(false);
     }
   }, [settings, isScanning, handleProgress]);
+
+  // Mode toggle: swap between crypto and tradfi. Also swaps the exchange/source
+  // to a sensible default for the new mode so the user doesn't get stuck with
+  // an invalid combination (e.g. 'hyperliquid' exchange in tradfi mode).
+  const handleModeChange = useCallback((newMode) => {
+    setSettings(prev => {
+      const newExchange = newMode === 'tradfi' ? 'auto' : 'okx_perps';
+      return { ...prev, mode: newMode, exchange: newExchange };
+    });
+    // Clear any previous scan results — they're for the wrong mode
+    setResults([]);
+    setStatus('idle');
+    setProgress({ done: 0, total: 0, matched: 0, message: '—' });
+  }, []);
 
   // No auto-scan — wait for manual user trigger
 
@@ -169,7 +186,7 @@ export default function Scanner() {
         color: 'var(--scanner-text)'
       }}
     >
-      <ScannerHeader settings={settings} scanMeta={scanMeta} />
+      <ScannerHeader settings={settings} scanMeta={scanMeta} onModeChange={handleModeChange} />
       <ScannerControls
         settings={settings}
         onSettingsChange={setSettings}

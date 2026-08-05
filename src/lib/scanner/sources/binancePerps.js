@@ -2,6 +2,15 @@
  * Binance USDⓈ-M Futures (perps) — free, no API key, CORS-enabled
  * Strong crypto perps source with deep liquidity. 600+ USDT-quoted perpetuals.
  *
+ * Also covers TRADIFI_PERPETUAL contracts — Binance's tokenized stock perps
+ * (150+ tickers as of Aug 2026: SPY, QQQ, NVDA, TSLA, AAPL, GOOGL, AMZN, META,
+ * MSFT, COIN, MSTR, HOOD, PLTR, GME, AMD, INTC, NFLX, DIS, JPM, GS, V, MA, WMT,
+ * COST, HD, PYPL, ADBE, CRM, ORCL, IBM, CSCO, QCOM, AVGO, TXN, MU, AMAT, LRCX,
+ * MRVL, AAOI, CIEN, LITE, plus ETFs IWM/USO/XLE/XBI, commodities XAU/XAG/XPT/XPD,
+ * leveraged ETFs TQQQ/SQQQ/SOXL/SOXS/UVXY, Asian stocks TENCENT/SAMSUNG/HK0700,
+ * and private companies OPENAI/ANTHROPIC/MINIMAX/ZHIPU/SPACEX).
+ * These are used by the TradFi scanner mode.
+ *
  * Docs: https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data
  * Endpoint: https://fapi.binance.com/fapi/v1/klines
  *
@@ -24,6 +33,9 @@
  *   actual token count.
  *
  * NOTE: Geo-restricted in some regions. The UI marks this with "⚠ VPN".
+ * NOTE: TRADIFI perps use contractType='TRADIFI_PERPETUAL' (not 'PERPETUAL').
+ *       Both types are included in the universe cache so this source can
+ *       fetch candles for both crypto and tradfi symbols.
  */
 
 import { fetchWithTimeout } from '../fetchWithTimeout';
@@ -46,6 +58,7 @@ const TIMEFRAME_INTERVAL = {
 // Cache of universe: bare symbol -> actual Binance baseAsset
 // (e.g. 'XEC' -> '1000XEC', 'BTC' -> 'BTC')
 let _universe = null;
+let _tradfiSet = null;  // Set of bare symbols that are TRADIFI_PERPETUAL
 let _universeTime = 0;
 let _universePromise = null;  // deduplicates concurrent loadUniverse() calls
 const UNIVERSE_TTL_MS = 10 * 60 * 1000;  // refresh every 10 min
@@ -66,18 +79,24 @@ async function loadUniverse() {
       }
       const d = await res.json();
       _universe = {};  // bare -> actual
+      _tradfiSet = new Set();
       for (const inst of d.symbols || []) {
-        if (inst.contractType !== 'PERPETUAL') continue;
+        // Include both crypto PERPETUAL and tradfi TRADIFI_PERPETUAL contracts
+        const isTradfi = inst.contractType === 'TRADIFI_PERPETUAL';
+        if (inst.contractType !== 'PERPETUAL' && !isTradfi) continue;
         if (inst.quoteAsset !== 'USDT') continue;
         const baseAsset = inst.baseAsset;
         if (!baseAsset) continue;
         _universe[baseAsset] = baseAsset;
+        if (isTradfi) _tradfiSet.add(baseAsset);
         if (baseAsset.startsWith('1000000')) {
           const bare = baseAsset.slice(7);
           _universe[bare] = baseAsset;
+          if (isTradfi) _tradfiSet.add(bare);
         } else if (baseAsset.startsWith('1000')) {
           const bare = baseAsset.slice(4);
           _universe[bare] = baseAsset;
+          if (isTradfi) _tradfiSet.add(bare);
         }
       }
       _universeTime = Date.now();
@@ -164,6 +183,30 @@ export async function isSupported(symbol) {
   const universe = await loadUniverse();
   if (!universe) return true;  // don't block if universe fetch failed
   return symbol.toUpperCase() in universe;
+}
+
+/**
+ * Check if a symbol is a Binance TRADIFI_PERPETUAL (tokenized stock perp).
+ * Used by the TradFi scanner mode to route symbols to this source.
+ * @param {string} symbol - bare symbol (e.g. 'SPY', 'NVDA')
+ * @returns {Promise<boolean>}
+ */
+export async function isTradfiPerp(symbol) {
+  await loadUniverse();
+  if (!_tradfiSet) return false;  // universe fetch failed — don't claim support
+  return _tradfiSet.has(symbol.toUpperCase());
+}
+
+/**
+ * Get all Binance TRADIFI_PERPETUAL symbols (bare, no 1000x prefix).
+ * Used by the TradFi scanner mode to know which symbols can use intraday
+ * timeframes via Binance perps (vs. daily-only from snapshot).
+ * @returns {Promise<string[]>}
+ */
+export async function getTradfiPerpSymbols() {
+  await loadUniverse();
+  if (!_tradfiSet) return [];
+  return Array.from(_tradfiSet);
 }
 
 export const sourceMeta = {

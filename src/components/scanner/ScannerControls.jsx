@@ -83,10 +83,10 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
 
       <Separator />
 
-      {/* Exchange */}
+      {/* Exchange / Source */}
       <div className="flex flex-col gap-0.5">
         <span className="text-[8px] font-semibold tracking-[0.12em] uppercase px-0.5" style={{ color: 'var(--scanner-text3)' }}>
-          Select Exchange
+          {settings.mode === 'tradfi' ? 'Select Source' : 'Select Exchange'}
         </span>
         <select
           className="font-mono text-[11px] font-medium tracking-wide px-2.5 py-1.5 outline-none cursor-pointer"
@@ -98,14 +98,25 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
           value={settings.exchange}
           onChange={e => update('exchange', e.target.value)}
         >
-          <option value="hyperliquid"    style={{ background: 'var(--scanner-bg2)' }}>Hyperliquid</option>
-          <option value="okx_perps"      style={{ background: 'var(--scanner-bg2)' }}>OKX Perps (Default — widest no-VPN coverage)</option>
-          <option value="okx"            style={{ background: 'var(--scanner-bg2)' }}>OKX (Spot)</option>
-          <option value="binance_perps"  style={{ background: 'var(--scanner-bg2)' }}>Binance Perps ⚠ VPN</option>
-          <option value="binance"        style={{ background: 'var(--scanner-bg2)' }}>Binance Spot ⚠ VPN</option>
-          <option value="kraken"         style={{ background: 'var(--scanner-bg2)' }}>Kraken</option>
-          <option value="bybit"          style={{ background: 'var(--scanner-bg2)' }}>Bybit ⚠ VPN for funding</option>
-          <option value="coingecko"      style={{ background: 'var(--scanner-bg2)' }}>CoinGecko (Daily)</option>
+          {settings.mode === 'tradfi' ? (
+            <>
+              <option value="auto"          style={{ background: 'var(--scanner-bg2)' }}>Auto (Binance→OKX→Snapshot)</option>
+              <option value="binance_perps" style={{ background: 'var(--scanner-bg2)' }}>Binance Perps (150 stocks, intraday)</option>
+              <option value="okx_perps"     style={{ background: 'var(--scanner-bg2)' }}>OKX Perps (54 stocks, intraday)</option>
+              <option value="snapshot"      style={{ background: 'var(--scanner-bg2)' }}>Snapshot (382 tickers, Daily only)</option>
+            </>
+          ) : (
+            <>
+              <option value="hyperliquid"    style={{ background: 'var(--scanner-bg2)' }}>Hyperliquid</option>
+              <option value="okx_perps"      style={{ background: 'var(--scanner-bg2)' }}>OKX Perps (Default — widest no-VPN coverage)</option>
+              <option value="okx"            style={{ background: 'var(--scanner-bg2)' }}>OKX (Spot)</option>
+              <option value="binance_perps"  style={{ background: 'var(--scanner-bg2)' }}>Binance Perps ⚠ VPN</option>
+              <option value="binance"        style={{ background: 'var(--scanner-bg2)' }}>Binance Spot ⚠ VPN</option>
+              <option value="kraken"         style={{ background: 'var(--scanner-bg2)' }}>Kraken</option>
+              <option value="bybit"          style={{ background: 'var(--scanner-bg2)' }}>Bybit ⚠ VPN for funding</option>
+              <option value="coingecko"      style={{ background: 'var(--scanner-bg2)' }}>CoinGecko (Daily)</option>
+            </>
+          )}
         </select>
       </div>
 
@@ -143,7 +154,8 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
           </select>
         </div>
 
-        {/* Market Cap Filter */}
+        {/* Market Cap Filter (crypto only — no tradfi fundamentals in v1) */}
+        {settings.mode !== 'tradfi' && (
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-1.5">
             <FilterToggle checked={settings.minMarketCapEnabled} onChange={v => update('minMarketCapEnabled', v)} />
@@ -173,6 +185,7 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
             <option value={1000000000}>$1B</option>
           </select>
         </div>
+        )}
 
         {/* RSI Range Filter */}
         <div className="flex flex-col gap-0.5">
@@ -226,6 +239,9 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
           </div>
         </div>
 
+        {/* Crypto-only filters (Chain, Sector, Max Supply) — hidden in TradFi mode */}
+        {settings.mode !== 'tradfi' && (
+        <>
         {/* Phase 2 — Chain Filter (CMC platform) */}
         <div className="flex flex-col gap-0.5">
           <span className="text-[8px] font-semibold tracking-[0.1em] uppercase" style={{ color: 'var(--scanner-text3)' }}>
@@ -314,6 +330,8 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
             title="Minimum max supply (filters out inflationary coins with null maxSupply). 0 = no filter."
           />
         </div>
+        </>
+        )}
       </div>
 
       <Separator />

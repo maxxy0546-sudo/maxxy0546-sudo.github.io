@@ -164,6 +164,7 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
   const fastLabel = indicatorLabel(settings.fastType, settings.emaFast, settings.vwapFastDays);
   const midLabel = indicatorLabel(settings.midType, settings.emaMid, settings.vwapMidDays);
   const slowLabel = indicatorLabel(settings.slowType, settings.emaSlow, settings.vwapDays);
+  const isTradFi = settings.mode === 'tradfi';
 
   return (
     <div className="font-mono px-5 md:px-8 py-5">
@@ -242,7 +243,7 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
         <EmptyState isScanning={isScanning} hasScanned={hasScanned} />
       ) : (
         <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--scanner-border2)' }}>
-          <table className="w-full min-w-[1300px] border-collapse">
+          <table className={`w-full border-collapse ${isTradFi ? 'min-w-[900px]' : 'min-w-[1300px]'}`}>
             <thead>
               <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
                 {[
@@ -250,21 +251,21 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
                   { key: null, label: 'Asset' },
                   { key: null, label: 'Price', right: true },
                   { key: null, label: '7D', right: true },
-                  { key: 'change1h', label: '1h Δ', right: true },
+                  { key: 'change1h', label: '1h Δ', right: true, cryptoOnly: true },
                   { key: 'change24h', label: '24h Δ', right: true },
-                  { key: 'volume24h', label: 'VOL', right: true },
+                  { key: 'volume24h', label: 'VOL', right: true, cryptoOnly: true },
                   { key: 'rVol', label: 'rVOL', right: true },
                   { key: 'rsi', label: 'RSI', right: true },
-                  { key: 'marketCap', label: 'MCAP', right: true },
-                  { key: 'fundingRate', label: 'FUND', right: true },
-                  { key: 'openInterest', label: 'OI', right: true },
-                  { key: 'oiRatio', label: 'OI/MC', right: true },
+                  { key: 'marketCap', label: 'MCAP', right: true, cryptoOnly: true },
+                  { key: 'fundingRate', label: 'FUND', right: true, cryptoOnly: true },
+                  { key: 'openInterest', label: 'OI', right: true, cryptoOnly: true },
+                  { key: 'oiRatio', label: 'OI/MC', right: true, cryptoOnly: true },
                   { key: 'pricePct', label: 'Δ Base', right: true },
                   { key: 'emaPct', label: 'Δ Spread', right: true },
                   { key: null, label: fastLabel, right: true },
                   { key: null, label: midLabel, right: true },
                   { key: null, label: slowLabel, right: true },
-                ].map((col, i) => (
+                ].filter(col => !isTradFi || !col.cryptoOnly).map((col, i) => (
                   <th
                     key={i}
                     className={`text-[8.5px] font-semibold tracking-[0.08em] uppercase whitespace-nowrap py-2 px-2.5 ${col.right ? 'text-right' : 'text-left'}`}
@@ -290,6 +291,7 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
                   maxPricePct={maxPricePct}
                   maxEmaPct={maxEmaPct}
                   onSelectRow={onSelectRow}
+                  isTradFi={isTradFi}
                 />
               ))}
             </tbody>
@@ -307,8 +309,9 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
  * @param {number} props.maxPricePct - max pricePct across all rows (for bar width)
  * @param {number} props.maxEmaPct - max emaPct across all rows (for bar width)
  * @param {function} [props.onSelectRow] - callback when row is clicked
+ * @param {boolean} [props.isTradFi] - true if in TradFi mode (hides crypto-only columns)
  */
-function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
+function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow, isTradFi }) {
   const pBarW = Math.max(2, Math.round((row.pricePct / maxPricePct) * 40));
   const eBarW = Math.max(2, Math.round((row.emaPct / maxEmaPct) * 40));
   const isPositive = row.change24h != null ? row.change24h >= 0 : null;
@@ -378,9 +381,9 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
       <td className="py-2 px-2.5" style={{ position: 'sticky', left: '32px', zIndex: 5, background: 'var(--scanner-bg1)' }}>
         <div className="text-[11px] font-bold leading-tight" style={{ color: 'var(--scanner-text)' }}>{row.symbol}</div>
         <div className="text-[9px] leading-tight max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap" style={{ color: 'var(--scanner-text3)' }}>{row.name}</div>
-        {row.platform && (
+        {(isTradFi ? row.category : row.platform) && (
           <div className="text-[7px] leading-tight mt-0.5" style={{ color: 'var(--scanner-text3)', opacity: 0.7 }}>
-            {row.platform}
+            {isTradFi ? row.category : row.platform}
           </div>
         )}
       </td>
@@ -395,7 +398,8 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
         <MiniSparkline data={row.sparkline} positive={isPositive} />
       </td>
 
-      {/* Phase 1c — 1h Change (from CMC) */}
+      {/* Phase 1c — 1h Change (from CMC) — crypto only */}
+      {!isTradFi && (
       <td className="py-2 px-2.5 text-right">
         <span className="text-[11px] font-semibold tabular-nums min-w-[42px] text-right" style={{
           color: row.change1h == null ? 'var(--scanner-text3)' :
@@ -404,6 +408,7 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
           {fmtChange(row.change1h)}
         </span>
       </td>
+      )}
 
       {/* 24h Change */}
       <td className="py-2 px-2.5 text-right">
@@ -414,12 +419,14 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
         </span>
       </td>
 
-      {/* VOL 24H */}
+      {/* VOL 24H — crypto only (tradfi has no CMC volume in v1) */}
+      {!isTradFi && (
       <td className="py-2 px-2.5 text-right">
         <span className="text-[11px] font-semibold tabular-nums" style={{ color: 'var(--scanner-text2)' }}>
           {row.volume24h > 0 ? fmtVolume(row.volume24h) : '—'}
         </span>
       </td>
+      )}
 
       {/* RELATIVE VOLUME (rVol = current / 20d SMA) */}
       <td className="py-2 px-2.5 text-right">
@@ -445,14 +452,17 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
         </span>
       </td>
 
-      {/* MKTCAP */}
+      {/* MKTCAP — crypto only (no tradfi fundamentals in v1) */}
+      {!isTradFi && (
       <td className="py-2 px-2.5 text-right">
         <span className="text-[11px] font-semibold tabular-nums" style={{ color: 'var(--scanner-text2)' }}>
           {row.marketCap > 0 ? fmtMarketCap(row.marketCap) : '—'}
         </span>
       </td>
+      )}
 
-      {/* FUNDING RATE (user-selected exchange — HL/OKX/Bybit/Binance perps; null for spot exchanges) */}
+      {/* FUNDING RATE (user-selected exchange — HL/OKX/Bybit/Binance perps; null for spot exchanges) — crypto only */}
+      {!isTradFi && (
       <td className="py-2 px-2.5 text-right" title={row.fundingRate == null ? 'No funding rate available (selected exchange is spot-only, or symbol not listed on selected exchange perp market)' : 'Funding rate from selected exchange. Positive (green) = longs pay shorts. Negative (red) = shorts pay longs.'}>
         <span className="text-[11px] font-semibold tabular-nums" style={{
           color: row.fundingRate == null ? 'var(--scanner-text3)' :
@@ -462,15 +472,19 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
           {fmtFunding(row.fundingRate)}
         </span>
       </td>
+      )}
 
-      {/* OPEN INTEREST in coin terms (6-exchange aggregated: HL + OKX + Bybit + Bitget + Gate + Binance) */}
+      {/* OPEN INTEREST in coin terms (6-exchange aggregated) — crypto only */}
+      {!isTradFi && (
       <td className="py-2 px-2.5 text-right">
         <span className="text-[11px] font-semibold tabular-nums" style={{ color: 'var(--scanner-text2)' }}>
           {fmtOICoin(row.openInterestRaw, row.symbol)}
         </span>
       </td>
+      )}
 
-      {/* OI/MC RATIO (OI in USD / MarketCap — normalized positioning intensity) */}
+      {/* OI/MC RATIO (OI in USD / MarketCap) — crypto only */}
+      {!isTradFi && (
       <td className="py-2 px-2.5 text-right">
         <span
           className="text-[11px] font-semibold tabular-nums cursor-help"
@@ -488,6 +502,7 @@ function ResultRow({ row, index, maxPricePct, maxEmaPct, onSelectRow }) {
           {row.oiRatio != null ? `${(row.oiRatio * 100).toFixed(1)}%` : '—'}
         </span>
       </td>
+      )}
 
       {/* Δ Base Trend */}
       <td className="py-2 px-2.5 text-right">
