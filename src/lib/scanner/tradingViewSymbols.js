@@ -55,9 +55,11 @@ const TRADFI_TV_PREFIX = {
   TENCENT: 'HKEX', HK0700: 'HKEX', HK1810: 'HKEX', SAMSUNG: 'KRX',
   SKHYNIX: 'KRX', HYUNDAI: 'KRX', POPMART: 'HKEX', SONY: 'NYSE',
   NOK: 'NYSE', BABA: 'NYSE',
-  // Private companies (TradingView may not have charts)
-  OPENAI: 'PRIVATE', ANTHROPIC: 'PRIVATE', SPACEX: 'PRIVATE',
+  // Private companies (TradingView may not have equity charts — use Binance perp)
+  OPENAI: 'PRIVATE', ANTHROPIC: 'PRIVATE',
   MINIMAX: 'PRIVATE', ZHIPU: 'PRIVATE',
+  // SpaceX (IPO'd — now SPCX on Binance as TRADIFI perp)
+  SPCX: 'BINANCE',
 };
 
 // Build a reverse lookup: for symbols that map to a full TV symbol (e.g. XAU→TVC:GOLD)
@@ -76,21 +78,44 @@ const INTERVAL_MAP = {
   '1W':  'W',
 };
 
-/** @param {string} symbol - e.g. "BTC" or "SPY" or "NVDA" */
-/** @param {string} exchange - e.g. "hyperliquid" or "auto" (tradfi) */
-/** @returns {string} e.g. "HYPERLIQUID:BTCUSD.P" or "NASDAQ:NVDA" */
+/**
+ * Map a screener symbol + exchange to a TradingView symbol.
+ *
+ * For TradFi mode (exchange='auto', 'snapshot', 'binance_perps', 'okx_perps',
+ * or known tradfi ticker), the DEFAULT is the Binance perp chart:
+ *   BINANCE:SPYUSDT.P  (TradingView's Binance Futures perp listing)
+ * This ensures the chart loads for ALL tradfi tickers that are on Binance
+ * (150+ TRADIFI_PERPETUAL contracts), even if TradingView doesn't have the
+ * equity exchange listing.
+ *
+ * Exceptions (use equity/commodity prefix instead of Binance perp):
+ *   - Commodities XAU/XAG/XPT/XPD/XCU → TVC:GOLD etc. (Binance doesn't have these)
+ *   - Index spot SPX → SP:SPX (Binance doesn't have SPX spot)
+ *   - Private companies OPENAI/ANTHROPIC/MINIMAX/ZHIPU → BINANCE perp (only source)
+ *
+ * @param {string} symbol - e.g. "BTC" or "SPY" or "NVDA"
+ * @param {string} exchange - e.g. "hyperliquid" or "auto" (tradfi)
+ * @returns {string} e.g. "HYPERLIQUID:BTCUSD.P" or "BINANCE:SPYUSDT.P"
+ */
 export function toTradingViewSymbol(symbol, exchange) {
   const sym = symbol.toUpperCase();
 
-  // TradFi mode: exchange is 'auto' or 'snapshot', OR the symbol is a known tradfi ticker
-  if (exchange === 'auto' || exchange === 'snapshot' || TRADFI_TV_PREFIX[sym]) {
-    // Full mapping (e.g. XAU → TVC:GOLD)
+  // TradFi mode: exchange is 'auto', 'snapshot', 'binance_perps', 'okx_perps',
+  // OR the symbol is a known tradfi ticker (covers the case where a tradfi
+  // ticker is selected from a crypto-mode exchange like binance_perps)
+  const isTradFiMode = exchange === 'auto' || exchange === 'snapshot' ||
+                       exchange === 'binance_perps' || exchange === 'okx_perps' ||
+                       TRADFI_TV_PREFIX[sym];
+
+  if (isTradFiMode) {
+    // Commodities → TVC prefix (Binance perps don't exist for these on TV)
     if (TRADFI_TV_FULL[sym]) return TRADFI_TV_FULL[sym];
-    // Prefix mapping (e.g. NVDA → NASDAQ:NVDA)
-    const prefix = TRADFI_TV_PREFIX[sym];
-    if (prefix) return `${prefix}:${sym}`;
-    // Unknown tradfi ticker — fall back to SMART (TradingView auto-resolves)
-    return `SMART:${sym}`;
+    // Index spot (SPX) → SP prefix
+    if (sym === 'SPX') return `SP:${sym}`;
+    // Default: Binance perp chart (BINANCE:SYMBOLUSDT.P)
+    // This covers all 150 Binance TRADIFI perps + any unknown tradfi ticker.
+    // TradingView has Binance Futures perp charts for all of them.
+    return `BINANCE:${sym}USDT.P`;
   }
 
   // Crypto mode

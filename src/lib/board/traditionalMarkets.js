@@ -181,7 +181,7 @@ const LIGHTER_EXPLORER = 'https://explorer.elliot.ai/api';
 // flip from $207.29 (snapshot) to $202.92 (Lighter) for NVDA, with
 // volume dropping from 106M to 4,260 — clearly wrong.
 const PRIVATE_TICKERS = new Set([
-  'OPENAI', 'ANTHROPIC', 'SPACEX', 'MINIMAX', 'ZHIPU',
+  'OPENAI', 'ANTHROPIC', 'MINIMAX', 'ZHIPU',
   'WLFI', 'YZY',
 ]);
 
@@ -200,7 +200,7 @@ const LIGHTER_MARKET_IDS = {
   BABA:177, TENCENT:201, XIAOMI:203, POPMART:204,
   SAMSUNG:140, SAMSUNGUSD:162, SKHYNIX:143, SKHYNIXUSD:161,
   HYUNDAI:141, HYUNDAIUSD:160, KRCOMP:142, BYD:205, EWY:166,
-  OPENAI:192, ANTHROPIC:193, SPACEX:173, MINIMAX:199,
+  OPENAI:192, ANTHROPIC:193, MINIMAX:199,
   GME:176, TTWO:179, IP:34, NOK:208,
   WHEAT:170, MAGS:155, BOTZ:154,
   EURUSD:96, GBPUSD:97, USDJPY:98, USDCHF:99, USDCAD:100,
@@ -369,7 +369,7 @@ async function fetchTradfiCandles(symbol, limit = 300, snapCandles = null) {
   //   can provide.
   //
   //   Live sources are now only used for tickers NOT in the snapshot:
-  //     - Private/pre-IPO tickers (OPENAI, ANTHROPIC, SPACEX, etc.) — Lighter
+  //     - Private/pre-IPO tickers (OPENAI, ANTHROPIC, etc.) — Lighter
   //     - Any new ticker added to TRAD_UNIVERSE before next snapshot refresh
   //
   // ── Race all primary sources in parallel ────────────────────────────────
@@ -642,7 +642,6 @@ export const TRAD_UNIVERSE = [
   // Pre-IPO
   { symbol: 'OPENAI',   name: 'OpenAI',                                 category: 'Pre-IPO',                      subtheme: 'AI',                       tier: 'Core',         type: 'Private' },
   { symbol: 'ANTHROPIC',name: 'Anthropic',                              category: 'Pre-IPO',                      subtheme: 'AI',                       tier: 'Core',         type: 'Private' },
-  { symbol: 'SPACEX',   name: 'SpaceX',                                 category: 'Pre-IPO',                      subtheme: 'Space',                    tier: 'Core',         type: 'Private' },
   { symbol: 'MINIMAX',  name: 'MiniMax',                                category: 'Pre-IPO',                      subtheme: 'AI',                       tier: 'Active',       type: 'Private' },
   // Consumer
   { symbol: 'GME',      name: 'GameStop',                               category: 'Consumer',                     subtheme: 'Meme Stock',               tier: 'Active',       type: 'Stock' },
@@ -723,7 +722,7 @@ export const TRAD_UNIVERSE = [
   { symbol: 'QNT',      name: 'Quant',                                 category: 'Interoperability',              subtheme: 'Enterprise',               tier: 'Active',       type: 'Stock' },
   { symbol: 'SMIC',     name: 'SMIC',                                  category: 'Semiconductors',                subtheme: 'Chinese Foundry',           tier: 'Core',         type: 'Stock' },
   { symbol: 'SPX',      name: 'S&P 500 Index (Spot)',                  category: 'Benchmark',                     subtheme: 'S&P 500 Spot',              tier: 'Active',       type: 'Index' },
-  { symbol: 'SPCX',     name: 'SpaceX',                                category: 'Pre-IPO',                       subtheme: 'Space',                     tier: 'Core',         type: 'Stock' },
+  { symbol: 'SPCX',     name: 'SpaceX',                                category: 'Aerospace',                     subtheme: 'Space',                     tier: 'Core',         type: 'Stock' },
   { symbol: 'STRC',     name: 'Strategy',                              category: 'Crypto Equities',               subtheme: 'BTC Treasury',              tier: 'Active',       type: 'Stock' },
   { symbol: 'WLFI',     name: 'World Liberty Financial',               category: 'Crypto Equities',               subtheme: 'DeFi Protocol',             tier: 'Active',       type: 'Stock' },
   { symbol: 'YZY',      name: 'Yeezy',                                 category: 'Consumer',                      subtheme: 'Apparel/Brand',             tier: 'Watch',        type: 'Stock' },
@@ -1165,7 +1164,7 @@ export async function fetchTradMarketData(onProgress, onPartialResults, existing
   // By passing snapOHLCV to fetchTradfiCandles per ticker, we ensure that
   // any ticker present in the snapshot uses snapshot data directly — no live
   // fetch attempted. Live sources are only hit for tickers NOT in the
-  // snapshot (private/pre-IPO tickers like OPENAI, ANTHROPIC, SPACEX).
+  // snapshot (private/pre-IPO tickers like OPENAI, ANTHROPIC).
   const snapOHLCV = await loadSnapshotTradfi();
 
   // ── Seed rawResults with existing data (snapshot or previous live) ───────
@@ -1239,7 +1238,7 @@ export async function fetchTradMarketData(onProgress, onPartialResults, existing
       // prediction market with stale prices.
       //
       // Live fetches still happen for tickers NOT in the snapshot:
-      //   - Private/pre-IPO tickers (OPENAI, ANTHROPIC, SPACEX, etc.)
+      //   - Private/pre-IPO tickers (OPENAI, ANTHROPIC, etc.)
       //   - Any new ticker added to TRAD_UNIVERSE before next snapshot refresh
       const snapCandles = snapOHLCV ? candlesFromSnapshot(snapOHLCV[asset.symbol]) : null;
       const result = await fetchTradfiCandles(asset.symbol, 300, snapCandles);
