@@ -531,3 +531,123 @@ export function getGapScan(assets, minGapPct = 2.0) {
 
   return { gapUps, gapDowns };
 }
+
+// ── ETF Extension Rank ───────────────────────────────────────────────────────
+
+/**
+ * All ETFs ranked by ATR extension from 50DMA (most extended at top,
+ * most smashed at bottom). Includes 5D z-score, ADR, RVOL, pct from 52W high.
+ *
+ * @param {Array} assets — tradData.assets
+ * @returns {Array} sorted ETF extension data
+ */
+export function getEtfExtension(assets) {
+  // Filter to ETF type (or Benchmark category which includes major ETFs)
+  const etfs = assets.filter(a =>
+    a.type === 'ETF' || a.category === 'Benchmark' || a.category === 'Levered'
+  );
+
+  return etfs
+    .filter(a => a.atrExt50ma != null)
+    .sort((a, b) => (b.atrExt50ma ?? -999) - (a.atrExt50ma ?? -999))
+    .map(a => ({
+      symbol: a.symbol, name: a.name, category: a.category,
+      atrExt50ma: a.atrExt50ma,
+      ret5d: a.ret5d, ret20d: a.ret20d,
+      distMa50: a.distMa50,
+      volRatio: a.volRatio,
+      pctFrom52wHigh: a.pctFrom52wHigh,
+      adrPct: a.adrPct20 ?? a.adrPct,
+      adrUsedPct: a.adrUsedPct,
+      above50: a.above50,
+      price: a.price,
+    }));
+}
+
+// ── RVOL Scanner ─────────────────────────────────────────────────────────────
+
+/**
+ * Relative volume scanner: 1D volume / trailing 30D avg volume (excluding today).
+ *
+ * @param {Array} assets — tradData.assets
+ * @param {Object} opts — { minRatio, minDollarVol, tiers, topN }
+ * @returns {Array} sorted RVOL results
+ */
+export function getRvolScan(assets, opts = {}) {
+  const {
+    minRatio = 1.5,
+    minDollarVol = 0,
+    tiers = ['Core', 'Active'],
+    topN = 50,
+  } = opts;
+
+  // Filter by tier + exclude Benchmark/Levered
+  const eligible = assets.filter(a =>
+    tiers.includes(a.tier) &&
+    !EXCLUDED_THEMES.has(a.category) &&
+    a.volRatio != null
+  );
+
+  return eligible
+    .filter(a => {
+      if (a.volRatio < minRatio) return false;
+      // Dollar vol estimate: price × volMa20 (20D avg volume)
+      const dollarVol = (a.volMa20 ?? 0) * (a.price ?? 0);
+      if (dollarVol < minDollarVol) return false;
+      return true;
+    })
+    .sort((a, b) => (b.volRatio ?? 0) - (a.volRatio ?? 0))
+    .slice(0, topN)
+    .map(a => ({
+      symbol: a.symbol, name: a.name, category: a.category, tier: a.tier,
+      volRatio: a.volRatio,
+      volMa20: a.volMa20,
+      dollarVol: (a.volMa20 ?? 0) * (a.price ?? 0),
+      ret1d: a.ret1d, ret5d: a.ret5d, ret20d: a.ret20d,
+      atrExt50ma: a.atrExt50ma,
+      adrPct: a.adrPct20 ?? a.adrPct,
+      pctFrom52wHigh: a.pctFrom52wHigh,
+      above50: a.above50,
+      price: a.price,
+    }));
+}
+
+// ── Breadth Thrust (Zweig-style) ─────────────────────────────────────────────
+
+/**
+ * Zweig breadth thrust: 10D EMA of advancers / (advancers + decliners).
+ * Thrust fires when EMA moves from < 0.40 to > 0.615 within 10 sessions.
+ *
+ * NOTE: Requires historical breadth time series. TrendScan's snapshot only
+ * stores the latest day's breadth, not a time series. This function is a
+ * placeholder that returns the current adv/dec ratio if available.
+ * Full Zweig thrust implementation requires storing daily breadth history
+ * in the snapshot (future enhancement).
+ *
+ * @param {Array} assets — tradData.assets (current day only)
+ * @returns {Object} { currentAdvDecRatio, zone, thrust: null }
+ */
+export function getBreadthThrust(assets) {
+  const universe = assets.filter(a =>
+    !EXCLUDED_THEMES.has(a.category) && a.ret1d != null
+  );
+
+  const advancers = universe.filter(a => a.ret1d > 0).length;
+  const decliners = universe.filter(a => a.ret1d < 0).length;
+  const total = advancers + decliners;
+  const ratio = total > 0 ? advancers / total : 0.5;
+
+  // Zone classification (single-day approximation)
+  let zone = 'neutral';
+  if (ratio < 0.30) zone = 'washed-out';
+  else if (ratio > 0.70) zone = 'thrust-zone';
+
+  return {
+    currentAdvDecRatio: ratio,
+    advancers,
+    decliners,
+    zone,
+    thrust: null,  // requires historical time series
+    note: 'Full Zweig thrust requires daily breadth history (not yet stored in snapshot)',
+  };
+}
