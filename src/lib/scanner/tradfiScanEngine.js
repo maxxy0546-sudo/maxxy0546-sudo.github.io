@@ -184,7 +184,25 @@ async function analyzeTradFiAsset(asset, settings, candleSource) {
     if (vol24hUsd < minVolume) return null;
   }
 
-  const change24h = await fetch24hChange(asset.symbol, candleSource, cleanCandles);
+  // ── 24h change ──
+  // For Binance/OKX perps: use fetch24hChange (exchange ticker endpoint).
+  // For snapshot: derive from candles directly (fetch24hChange doesn't handle 'snapshot').
+  let change24h = null;
+  if (candleSource === 'snapshot') {
+    if (cleanCandles.length >= 2) {
+      const now = Date.now();
+      const target = now - 24 * 60 * 60 * 1000;
+      let best = cleanCandles[0];
+      for (const c of cleanCandles) {
+        if (Math.abs(c.ts - target) < Math.abs(best.ts - target)) best = c;
+      }
+      const open24h = best.open;
+      const lastClose = cleanCandles[cleanCandles.length - 1].close;
+      if (open24h > 0) change24h = ((lastClose - open24h) / open24h) * 100;
+    }
+  } else {
+    change24h = await fetch24hChange(asset.symbol, candleSource, cleanCandles);
+  }
   const sparkline = closes.slice(-sparklineCandles);
   const rVol = computeRVol(cleanCandles, 20);
 
