@@ -1433,7 +1433,7 @@ async function main() {
   console.log(`  CMC global metrics:     ${globalMetrics ? `BTC dom ${globalMetrics.btcDominance?.toFixed(1)}%` : 'null'}`);
   console.log(`  Binance OI:             ${binanceOI ? `${Object.keys(binanceOI).length} assets` : 'null'}`);
   console.log(`  Fear & Greed days:      ${fearGreed.length}`);
-  console.log(`  CBOE P/C series:        ${Object.keys(cboe).length}`);
+  console.log(`  VIX real-time:          ${vixRealtime ? `${vixRealtime.price} (${vixRealtime.changePercent > 0 ? '+' : ''}${vixRealtime.changePercent.toFixed(2)}%)` : 'null'}`);
   console.log(`  Ken French months:      ${kenFrench.length}`);
   console.log(`  Tradfi OHLCV tickers:   ${Object.keys(tradfiOHLCV).length}`);
   console.log(`  ETF flow assets:        ${Object.keys(etfFlows).length} (BTC, ETH, SOL, HYPE)`);
