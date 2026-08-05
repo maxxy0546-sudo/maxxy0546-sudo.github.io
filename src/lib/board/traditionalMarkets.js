@@ -973,6 +973,7 @@ export const TRAD_UNIVERSE = [
   { symbol: 'UVXY', name: 'ProShares Ultra VIX Short-Term Futures', category: 'Benchmark', subtheme: 'VIX ETF', tier: 'Active', type: 'Stock', source: 'twelvedata' },
   { symbol: 'VEEV', name: 'Veeva Systems', category: 'Software Infrastructure', subtheme: 'Vertical SaaS', tier: 'Watch', type: 'Stock', source: 'twelvedata' },
   { symbol: 'VIAV', name: 'Viavi Solutions', category: 'Optics', subtheme: 'Optical Test/Measurement', tier: 'Active', type: 'Stock', source: 'twelvedata' },
+  { symbol: 'VIX', name: 'CBOE Volatility Index', category: 'Benchmark', subtheme: 'VIX Index', tier: 'Core', type: 'Index' },
   { symbol: 'VXX', name: 'iPath Series B S&P 500 VIX Short-Term Futures ETN', category: 'Benchmark', subtheme: 'VIX Short-Term', tier: 'Active', type: 'Stock', source: 'twelvedata' },
   { symbol: 'VXZ', name: 'iPath Series B S&P 500 VIX Mid-Term Futures ETN', category: 'Benchmark', subtheme: 'VIX Mid-Term', tier: 'Active', type: 'Stock', source: 'twelvedata' },
   { symbol: 'WDAY', name: 'Workday', category: 'Software Infrastructure', subtheme: 'Enterprise SaaS', tier: 'Active', type: 'Stock', source: 'twelvedata' },
@@ -985,6 +986,100 @@ export const TRAD_UNIVERSE = [
   { symbol: 'XPEV', name: 'XPeng', category: 'EV/Autonomy', subtheme: 'China EV', tier: 'Active', type: 'Stock', source: 'twelvedata' },
   { symbol: 'ZBRA', name: 'Zebra Technologies', category: 'Robotics', subtheme: 'Warehouse/Logistics', tier: 'Active', type: 'Stock', source: 'twelvedata' },
   { symbol: 'ZS', name: 'Zscaler', category: 'Software Infrastructure', subtheme: 'Security', tier: 'Active', type: 'Stock', source: 'twelvedata' },
+  // ═══ Leveraged ETFs (ported from SMB levered_etfs.csv — 93 ETFs) ═══
+{ symbol: 'TQQQ', name: '3x Nasdaq-100', category: 'Levered', subtheme: 'Index Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'QLD', name: '2x Nasdaq-100', category: 'Levered', subtheme: 'Index Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'UPRO', name: '3x S&P 500', category: 'Levered', subtheme: 'Index Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'SPXL', name: '3x S&P 500', category: 'Levered', subtheme: 'Index Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'SSO', name: '2x S&P 500', category: 'Levered', subtheme: 'Index Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'TNA', name: '3x Russell 2000', category: 'Levered', subtheme: 'Index Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'UWM', name: '2x Russell 2000', category: 'Levered', subtheme: 'Index Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'UDOW', name: '3x Dow 30', category: 'Levered', subtheme: 'Index Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'SQQQ', name: '-3x Nasdaq-100', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'QID', name: '-2x Nasdaq-100', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'PSQ', name: '-1x Nasdaq-100', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'SPXU', name: '-3x S&P 500', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'SPXS', name: '-3x S&P 500', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'SDS', name: '-2x S&P 500', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'SH', name: '-1x S&P 500', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'TZA', name: '-3x Russell 2000', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'TWM', name: '-2x Russell 2000', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'SDOW', name: '-3x Dow 30', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'SOXL', name: '3x Semiconductors', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'USD', name: '2x Semiconductors', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'TECL', name: '3x Technology', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'ROM', name: '2x Technology', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'FAS', name: '3x Financials', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'LABU', name: '3x Biotech', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'NAIL', name: '3x Homebuilders', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'DPST', name: '3x Regional Banks', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'DRN', name: '3x Real Estate', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'ERX', name: '2x Energy', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'GUSH', name: '2x Oil & Gas E&P', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'NUGT', name: '2x Gold Miners', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'JNUG', name: '2x Jr Gold Miners', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'CURE', name: '3x Healthcare', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'RETL', name: '3x Retail', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'UTSL', name: '3x Utilities', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'SOXS', name: '-3x Semiconductors', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'SSG', name: '-2x Semiconductors', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'TECS', name: '-3x Technology', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'REW', name: '-2x Technology', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'FAZ', name: '-3x Financials', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'LABD', name: '-3x Biotech', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'ERY', name: '-2x Energy', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'DRIP', name: '-2x Oil & Gas E&P', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'DUST', name: '-2x Gold Miners', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'JDST', name: '-2x Jr Gold Miners', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'DRV', name: '-3x Real Estate', category: 'Levered', subtheme: 'Sector Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'NVDL', name: '2x NVIDIA', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'NVDU', name: '2x NVIDIA', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'TSLL', name: '2x Tesla', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'TSLT', name: '2x Tesla', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'MSTU', name: '2x MicroStrategy', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'MSTX', name: '2x MicroStrategy', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'CONL', name: '2x Coinbase', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'PLTU', name: '2x Palantir', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'AMDL', name: '2x AMD', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'MUU', name: '2x Micron', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'SNXX', name: '2x SanDisk', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'WDCX', name: '2x Western Digital', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'STXX', name: '2x Seagate', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'UPSX', name: '2x Upstart', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'TARK', name: '2x ARKK', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'AAPU', name: '2x Apple', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'AAPB', name: '2x Apple', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'AMZU', name: '2x Amazon', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'MSFU', name: '2x Microsoft', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'METU', name: '2x Meta', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'GGLL', name: '2x Alphabet', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'AVL', name: '2x Broadcom', category: 'Levered', subtheme: 'Single Stock Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'NVDS', name: '-1.5x NVIDIA', category: 'Levered', subtheme: 'Single Stock Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'TSLQ', name: '-2x Tesla', category: 'Levered', subtheme: 'Single Stock Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'TSLZ', name: '-2x Tesla', category: 'Levered', subtheme: 'Single Stock Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'MSTZ', name: '-2x MicroStrategy', category: 'Levered', subtheme: 'Single Stock Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'SNDQ', name: '-2x SanDisk', category: 'Levered', subtheme: 'Single Stock Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'SARK', name: '-1x ARKK', category: 'Levered', subtheme: 'Single Stock Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'UVIX', name: '2x VIX Futures', category: 'Levered', subtheme: 'Volatility Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'UVXY', name: '1.5x VIX Futures', category: 'Levered', subtheme: 'Volatility Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'SVIX', name: '-1x VIX Futures', category: 'Levered', subtheme: 'Volatility Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'SVXY', name: '-0.5x VIX Futures', category: 'Levered', subtheme: 'Volatility Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'BITX', name: '2x Bitcoin', category: 'Levered', subtheme: 'Crypto Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'BITU', name: '2x Bitcoin', category: 'Levered', subtheme: 'Crypto Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'ETHU', name: '2x Ether', category: 'Levered', subtheme: 'Crypto Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'SBIT', name: '-2x Bitcoin', category: 'Levered', subtheme: 'Crypto Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'ETHD', name: '-2x Ether', category: 'Levered', subtheme: 'Crypto Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'BOIL', name: '2x Natural Gas', category: 'Levered', subtheme: 'Commodity Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'KOLD', name: '-2x Natural Gas', category: 'Levered', subtheme: 'Commodity Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'UCO', name: '2x Crude Oil', category: 'Levered', subtheme: 'Commodity Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'SCO', name: '-2x Crude Oil', category: 'Levered', subtheme: 'Commodity Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'AGQ', name: '2x Silver', category: 'Levered', subtheme: 'Commodity Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'ZSL', name: '-2x Silver', category: 'Levered', subtheme: 'Commodity Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'UGL', name: '2x Gold', category: 'Levered', subtheme: 'Commodity Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'GLL', name: '-2x Gold', category: 'Levered', subtheme: 'Commodity Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'TMF', name: '3x 20Y Treasury', category: 'Levered', subtheme: 'Bonds Long', tier: 'Active', type: 'ETF' },
+  { symbol: 'TMV', name: '-3x 20Y Treasury', category: 'Levered', subtheme: 'Bonds Short', tier: 'Active', type: 'ETF' },
+  { symbol: 'TBT', name: '-2x 20Y Treasury', category: 'Levered', subtheme: 'Bonds Short', tier: 'Active', type: 'ETF' },
 ];
 
 
@@ -1027,7 +1122,11 @@ function computeTradMetrics(candles) {
   const n = closes.length;
 
   const price = closes[n - 1];
+
+  // ── Moving Averages (10, 20, 21, 50, 200) ──
+  const ma10  = sma(closes, Math.min(10, n));
   const ma20  = sma(closes, Math.min(20, n));
+  const ma21  = sma(closes, Math.min(21, n));
   const ma50  = sma(closes, Math.min(50, n));
   const ma200 = closes.length >= 200 ? sma(closes, 200) : null;
 
@@ -1036,15 +1135,19 @@ function computeTradMetrics(candles) {
   const ret20d = n >= 21 ? (closes[n-1] / closes[n-21] - 1) : null;
   const ret60d = n >= 61 ? (closes[n-1] / closes[n-61] - 1) : null;
 
+  const above10  = ma10  != null ? (price > ma10  ? 1 : 0) : null;
   const above20  = ma20  != null ? (price > ma20  ? 1 : 0) : null;
+  const above21  = ma21  != null ? (price > ma21  ? 1 : 0) : null;
   const above50  = ma50  != null ? (price > ma50  ? 1 : 0) : null;
   const above200 = ma200 != null ? (price > ma200 ? 1 : 0) : null;
 
+  const distMa10  = ma10  != null ? (price / ma10  - 1) * 100 : null;
   const distMa20  = ma20  != null ? (price / ma20  - 1) * 100 : null;
+  const distMa21  = ma21  != null ? (price / ma21  - 1) * 100 : null;
   const distMa50  = ma50  != null ? (price / ma50  - 1) * 100 : null;
   const distMa200 = ma200 != null ? (price / ma200 - 1) * 100 : null;
 
-  // 14-day ATR (Wilder)
+  // ── 14-day ATR (Wilder) ──
   const trs = [];
   for (let i = 1; i < candles.length; i++) {
     trs.push(Math.max(
@@ -1062,13 +1165,35 @@ function computeTradMetrics(candles) {
 
   const atrExt50ma = (ma50 && atr14) ? (price - ma50) / atr14 : null;
 
-  // Average Daily Range % — mean of (high/low - 1) over 20 days
-  const rangePct = candles.slice(-20)
-    .map(c => c.low > 0 ? (c.high / c.low - 1) * 100 : null)
-    .filter(v => v != null);
-  const adrPct = rangePct.length >= 10 ? rangePct.reduce((a, b) => a + b, 0) / rangePct.length : null;
+  // ── Average Daily Range (multi-window: 5, 14, 20 days) ──
+  // ADR% = mean(high/low - 1) * 100   (comparable across price levels)
+  // ADR$ = mean(high - low)           (raw points, for absolute sizing)
+  // Also "% of ADR used today" = today's (high-low) / trailing 20D ADR$ (using yesterday's ADR)
+  // 150% = stretched, 30% = room left — a fast exhaustion/strength read.
+  const dailyRangePct = candles.map(c => c.low > 0 ? (c.high / c.low - 1) * 100 : 0);
+  const dailyRangeAbs = candles.map(c => c.high - c.low);
 
-  // Trend Tenure — consecutive days closing above the 50MA
+  const adrPct5  = sma(dailyRangePct, Math.min(5, n));
+  const adrPct14 = sma(dailyRangePct, Math.min(14, n));
+  const adrPct20 = sma(dailyRangePct, Math.min(20, n));
+  const adrPct   = adrPct20; // backward compat — keep old field name as alias for 20D
+
+  const adrAbs5  = sma(dailyRangeAbs, Math.min(5, n));
+  const adrAbs14 = sma(dailyRangeAbs, Math.min(14, n));
+  const adrAbs20 = sma(dailyRangeAbs, Math.min(20, n));
+
+  // ADR used today: today's range / trailing 20D ADR$ measured through YESTERDAY
+  // (shift(1) in pandas — we use the prior 20-day ADR, not including today)
+  let adrUsedPct = null;
+  if (n >= 21 && adrAbs20 != null) {
+    // Compute the 20D ADR through yesterday (exclude today's range from the average)
+    const priorAdrAbs20 = sma(dailyRangeAbs.slice(0, -1), 20);
+    if (priorAdrAbs20 && priorAdrAbs20 > 0) {
+      adrUsedPct = (dailyRangeAbs[n - 1] / priorAdrAbs20) * 100;
+    }
+  }
+
+  // ── Trend Tenure — consecutive days closing above the 50MA ──
   let trendTenure = null;
   if (closes.length >= 51) {
     const ma50Series = [];
@@ -1088,12 +1213,19 @@ function computeTradMetrics(candles) {
   const volMa20  = sma(vols, Math.min(20, n));
   const volRatio = volMa20 && volMa20 > 0 ? vols[n-1] / volMa20 : null;
 
-  // 52-week high/low
+  // ── Highs / Breakouts ──
+  // 20-day high and 52-week high
+  const high20d = n >= 20 ? Math.max(...highs.slice(-20)) : null;
   const yearAgo = Math.max(0, n - 252);
+  const yearHighs = highs.slice(yearAgo);
+  const high52w = yearHighs.length > 0 ? Math.max(...yearHighs) : null;
   const yearCloses = closes.slice(yearAgo);
-  const high52w = yearCloses.length > 0 ? Math.max(...yearCloses) : null;
   const low52w  = yearCloses.length > 0 ? Math.min(...yearCloses) : null;
   const pctFrom52wHigh = high52w ? (price / high52w - 1) * 100 : null;
+
+  // New high flags (0/1) — did today's high reach the 20D/52W high?
+  const newHigh20d = high20d != null ? (highs[n-1] >= high20d ? 1 : 0) : 0;
+  const newHigh52w = high52w != null ? (highs[n-1] >= high52w ? 1 : 0) : 0;
 
   // RSI 14
   const rsi14 = computeRsi(closes, 14);
@@ -1101,13 +1233,17 @@ function computeTradMetrics(candles) {
   const sparkline = closes.slice(-30);
 
   return {
-    price, ma20, ma50, ma200,
+    price, ma10, ma20, ma21, ma50, ma200,
     ret1d, ret5d, ret20d, ret60d,
-    above20, above50, above200,
-    distMa20, distMa50, distMa200,
-    atr14, atrExt50ma, volRatio,
-    adrPct, trendTenure,
-    high52w, low52w, pctFrom52wHigh,
+    above10, above20, above21, above50, above200,
+    distMa10, distMa20, distMa21, distMa50, distMa200,
+    atr14, atrExt50ma, volRatio, volMa20,
+    adrPct, adrPct5, adrPct14, adrPct20,
+    adrAbs5, adrAbs14, adrAbs20,
+    adrUsedPct,
+    trendTenure,
+    high20d, high52w, low52w, pctFrom52wHigh,
+    newHigh20d, newHigh52w,
     rsi14,
     sparkline,
   };
@@ -1290,14 +1426,23 @@ export async function fetchTradMarketData(onProgress, onPartialResults, existing
 
 // ── Build final/partial result from rawResults ───────────────────────────────
 function buildTradResult(rawResults, sourceTracker) {
-  // Compute RS vs QQQ for each asset
+  // ── Compute Relative Strength vs benchmarks (QQQ + RSP) ──────────────────
+  // RS = ticker_return - benchmark_return over the same period.
+  // QQQ = growth-heavy benchmark, RSP = equal-weight S&P 500 (broad market).
+  // A stock outperforming RSP is a real breadth leader, not just mega-cap beta.
   const qqqResult = rawResults.find(r => r.asset.symbol === 'QQQ');
+  const rspResult = rawResults.find(r => r.asset.symbol === 'RSP');
   const qqqRet20d = qqqResult?.metrics?.ret20d ?? 0;
+  const qqqRet60d = qqqResult?.metrics?.ret60d ?? 0;
+  const rspRet20d = rspResult?.metrics?.ret20d ?? 0;
+  const rspRet60d = rspResult?.metrics?.ret60d ?? 0;
+
   for (const r of rawResults) {
     if (r.metrics) {
-      r.metrics.rs_qqq_20d = r.metrics.ret20d != null
-        ? r.metrics.ret20d - qqqRet20d
-        : null;
+      r.metrics.rs_qqq_20d = r.metrics.ret20d != null ? r.metrics.ret20d - qqqRet20d : null;
+      r.metrics.rs_qqq_60d = r.metrics.ret60d != null ? r.metrics.ret60d - qqqRet60d : null;
+      r.metrics.rs_rsp_20d = r.metrics.ret20d != null ? r.metrics.ret20d - rspRet20d : null;
+      r.metrics.rs_rsp_60d = r.metrics.ret60d != null ? r.metrics.ret60d - rspRet60d : null;
     }
   }
 

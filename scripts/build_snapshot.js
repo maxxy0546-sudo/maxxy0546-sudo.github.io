@@ -729,43 +729,37 @@ async function fetchKenFrench() {
 // Source: https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/
 // Tracks equity, index, and total market put/call ratios — a key sentiment indicator.
 
-async function fetchCBOEPutCall() {
-  console.log('── CBOE put/call ratios ──');
-  const series = {
-    equity: 'https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv',
-    index:  'https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/indexpc.csv',
-    total:  'https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/totalpc.csv',
-  };
-  const out = {};
-  for (const [name, url] of Object.entries(series)) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) { console.warn(`  ✗ CBOE ${name}: HTTP ${res.status}`); continue; }
-      const text = await res.text();
-      // CBOE CSV format: header row, then data rows with date, put volume, call volume, total, P/C ratio
-      const lines = text.trim().split('\n');
-      if (lines.length < 2) continue;
-      // Parse header to find column indices
-      const header = lines[0].split(',');
-      // Take last 30 rows for recent trend
-      const dataLines = lines.slice(-30);
-      const parsed = dataLines.map(line => {
-        const parts = line.split(',');
-        return {
-          date: parts[0],
-          putVolume: parseFloat(parts[1]) || 0,
-          callVolume: parseFloat(parts[2]) || 0,
-          total: parseFloat(parts[3]) || 0,
-          ratio: parseFloat(parts[4]) || 0,
-        };
-      }).filter(d => d.date && d.ratio > 0);
-      out[name] = parsed;
-      console.log(`  ✓ CBOE ${name}: ${parsed.length} days, latest ratio: ${parsed[parsed.length-1]?.ratio?.toFixed(3)}`);
-    } catch (e) {
-      console.warn(`  ✗ CBOE ${name}: ${e.message}`);
-    }
+// ─── CBOE VIX real-time (free JSON API) ─────────────────────────────────────
+// The old CBOE P/C ratio CSVs (equitypc.csv, indexpc.csv, totalpc.csv) stopped
+// updating in October 2019 — CBOE deprecated them. We now use the CBOE delayed
+// quotes JSON API for real-time VIX data. Historical VIX OHLCV comes from the
+// Yahoo ^VIX fetch (part of the tradfi snapshot).
+async function fetchVIXRealtime() {
+  console.log('── CBOE VIX real-time ──');
+  try {
+    const res = await fetch('https://cdn.cboe.com/api/global/delayed_quotes/quotes/_VIX.json');
+    if (!res.ok) { console.warn(`  ✗ CBOE VIX: HTTP ${res.status}`); return null; }
+    const d = await res.json();
+    const vix = d?.data;
+    if (!vix) return null;
+    const out = {
+      price: vix.current_price,
+      change: vix.price_change,
+      changePercent: vix.price_change_percent,
+      open: vix.open,
+      high: vix.high,
+      low: vix.low,
+      close: vix.close,
+      prevClose: vix.prev_day_close,
+      timestamp: d?.timestamp,
+      lastTradeTime: vix.last_trade_time,
+    };
+    console.log(`  ✓ VIX: ${out.price} (${out.changePercent > 0 ? '+' : ''}${out.changePercent.toFixed(2)}%)`);
+    return out;
+  } catch (e) {
+    console.warn(`  ✗ CBOE VIX: ${e.message}`);
+    return null;
   }
-  return out;
 }
 
 // ─── Fear & Greed (free) ─────────────────────────────────────────────────────
@@ -938,6 +932,7 @@ const YAHOO_SPECIAL_MAP = {
   'XAU':'GC=F','XAG':'SI=F','XCU':'HG=F','XPD':'PA=F','XPT':'PL=F',
   'WTI':'CL=F','BRENTOIL':'BZ=F','NATGAS':'NG=F',
   'US500':'^GSPC','US100':'^NDX','SPX':'^GSPC',
+  'VIX':'^VIX','VXZ':'^VXZ','DJI':'^DJI','NDX':'^NDX',
   // Commodities not covered by the above
   'WHEAT':'ZW=F',     // Wheat futures
   'PAXG':'PAXG-USD',  // Pax Gold (crypto-pegged gold, trades on Yahoo as PAXG-USD)
@@ -1217,12 +1212,12 @@ async function main() {
   // Log CMC credit usage at start (FREE — 0 credits) so we see budget before/after
   await logCMCCreditUsage();
 
-  let [fred, coingecko, fearGreed, kenFrench, cboe, tradfiOHLCV, etfFlows, factorWatch, cryptoFactors, cgHistorical, cryptoUniverse, cmcTrending, globalMetrics, binanceOI] = await Promise.all([
+  let [fred, coingecko, fearGreed, kenFrench, vixRealtime, tradfiOHLCV, etfFlows, factorWatch, cryptoFactors, cgHistorical, cryptoUniverse, cmcTrending, globalMetrics, binanceOI] = await Promise.all([
     fetchAllFred(),
     fetchCoinGeckoTop(),
     fetchFearGreed(),
     fetchKenFrench(),
-    fetchCBOEPutCall(),
+    fetchVIXRealtime(),
     fetchTradfiSnapshot(),
     fetchFarsideETFFlows(),
     fetchFactorWatch(),
@@ -1405,7 +1400,7 @@ async function main() {
     binance_oi: binanceOI,
     fear_greed: fearGreed,
     ken_french: kenFrench,
-    cboe_put_call: cboe,
+    vix_realtime: vixRealtime,
     etf_flows: etfFlows,
     factor_watch: factorWatch,
     factor_watch_history: factorWatchHistory,
