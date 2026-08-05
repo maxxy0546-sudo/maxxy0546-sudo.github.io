@@ -8,6 +8,10 @@ import ExtensionTab from '@/components/board/ExtensionTab';
 import MomentumTab from '@/components/board/MomentumTab';
 import MomentumScanTab from '@/components/board/MomentumScanTab';
 import MacroTab from '@/components/board/MacroTab';
+import LeveredETFTab from '@/components/board/LeveredETFTab';
+import ThemeScoresTab from '@/components/board/ThemeScoresTab';
+import EtfPulseTab from '@/components/board/EtfPulseTab';
+import ScannersTab from '@/components/board/ScannersTab';
 import MassiveApiKeyInput from '@/components/scanner/MassiveApiKeyInput';
 import FactorMonitor from '@/components/board/FactorMonitor';
 import QuickViewBar from '@/components/board/QuickViewBar';
@@ -17,11 +21,9 @@ import { fetchTradMarketData, buildTradDataFromSnapshot } from '@/lib/board/trad
 import { fetchAllTickers as fetchHyperliquidTickers } from '@/lib/scanner/sources/hyperliquid';
 import { getGloballyBlockedSources } from '@/lib/scanner/sourceResolver';
 
-// TradFi moved to position 1 (right after Daily) so cross-asset breadth
-// comparison is the first thing users see when they explore beyond Daily.
-// Indices/sectors/commodities/FX/rates (~80 assets) — same Yahoo data the
-// BoardHeader's new TradFi breadth spectrum uses.
-const TABS = ['Daily', 'Crypto', 'TradFi', 'Themes', 'Breadth', 'Momentum Scan', 'Momentum', 'Extension', 'Factor Monitor'];
+// TradFi tabs clustered together (indices 2-6) so tradfi content stays grouped.
+// New SMB tabs: Levered ETFs, Theme Scores, ETF Pulse, Scanners.
+const TABS = ['Daily', 'Crypto', 'TradFi', 'Levered ETFs', 'Theme Scores', 'ETF Pulse', 'Scanners', 'Themes', 'Breadth', 'Momentum Scan', 'Momentum', 'Extension', 'Factor Monitor'];
 
 const DEFAULT_EXCHANGE = 'auto';
 
@@ -314,12 +316,11 @@ export default function Board() {
     }
   }, []);
 
-  // Auto-refresh: when the user first visits the TradFi tab (activeTab === 1)
-  // and we only have snapshot data (not yet refreshed with live data), kick
-  // off the live background refresh automatically. This gives the user the
-  // instant snapshot view, then seamlessly updates with live data as it arrives.
+  // Auto-refresh: when the user first visits any TradFi tab (indices 2-6:
+  // TradFi, Levered ETFs, Theme Scores, ETF Pulse, Scanners) and we only
+  // have snapshot data, kick off the live background refresh automatically.
   useEffect(() => {
-    if (activeTab === 1 && tradDataSource === 'snapshot' && !tradLoading && !tradAutoRefreshed) {
+    if ([2, 3, 4, 5, 6].includes(activeTab) && tradDataSource === 'snapshot' && !tradLoading && !tradAutoRefreshed) {
       setTradAutoRefreshed(true);
       runTradAnalysis();
     }
@@ -529,12 +530,16 @@ export default function Board() {
             <CryptoTab cryptoAssets={data?.cryptoAssets} />
           )}
           {activeTab === 2 && <MacroTab tradData={tradData} isLoading={tradLoading} snapshotLoading={tradSnapshotLoading} onRefresh={runTradAnalysis} />}
-          {activeTab === 3 && <ThemesTab themes={themes} constituents={constituents} />}
-          {activeTab === 4 && <BreadthTab breadthSeries={breadthSeries} />}
-          {activeTab === 5 && <MomentumScanTab momentumScan={momentumScan} />}
-          {activeTab === 6 && <MomentumTab cleanMomentum={cleanMomentum} />}
-          {activeTab === 7 && <ExtensionTab tooHot={tooHot} fading={fading} />}
-          {activeTab === 8 && <FactorMonitor />}
+          {activeTab === 3 && <LeveredETFTab tradData={tradData} isLoading={tradLoading} />}
+          {activeTab === 4 && <ThemeScoresTab tradData={tradData} isLoading={tradLoading} />}
+          {activeTab === 5 && <EtfPulseTab tradData={tradData} isLoading={tradLoading} />}
+          {activeTab === 6 && <ScannersTab tradData={tradData} isLoading={tradLoading} />}
+          {activeTab === 7 && <ThemesTab themes={themes} constituents={constituents} />}
+          {activeTab === 8 && <BreadthTab breadthSeries={breadthSeries} />}
+          {activeTab === 9 && <MomentumScanTab momentumScan={momentumScan} />}
+          {activeTab === 10 && <MomentumTab cleanMomentum={cleanMomentum} />}
+          {activeTab === 11 && <ExtensionTab tooHot={tooHot} fading={fading} />}
+          {activeTab === 12 && <FactorMonitor />}
         </>
       )}
 
