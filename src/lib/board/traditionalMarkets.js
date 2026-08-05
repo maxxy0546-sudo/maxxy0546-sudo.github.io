@@ -1519,3 +1519,16 @@ function buildTradResult(rawResults, sourceTracker) {
     fetchedAt: new Date().toISOString(),
   };
 }
+
+// ── Extended scoring (ported from SMB scoring.py) ────────────────────────────
+// These functions are called separately (not in buildTradResult) to avoid
+// circular imports. The Board page calls them after tradData is built.
+//
+// Usage:
+//   import { computeThemeScores, getExtensionLists, getRegimeRead,
+//            getEtfPulse, getLeadershipShifts, getNewHighsLows } from './tradfiScoring';
+//   const themeScores = computeThemeScores(tradData.assets);
+//   const extensionLists = getExtensionLists(tradData.assets);
+//   const regimeRead = getRegimeRead(tradData.assets);
+//   const etfPulse = getEtfPulse(tradData.assets);
+//   const newHighsLows = getNewHighsLows(tradData.assets);
