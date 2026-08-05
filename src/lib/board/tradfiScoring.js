@@ -618,36 +618,88 @@ export function getRvolScan(assets, opts = {}) {
  * Zweig breadth thrust: 10D EMA of advancers / (advancers + decliners).
  * Thrust fires when EMA moves from < 0.40 to > 0.615 within 10 sessions.
  *
- * NOTE: Requires historical breadth time series. TrendScan's snapshot only
- * stores the latest day's breadth, not a time series. This function is a
- * placeholder that returns the current adv/dec ratio if available.
- * Full Zweig thrust implementation requires storing daily breadth history
- * in the snapshot (future enhancement).
+ * Uses the tradfi_breadth_history time series from the snapshot (computed
+ * server-side by build_snapshot.js). Falls back to single-day approximation
+ * if history is not available.
  *
- * @param {Array} assets — tradData.assets (current day only)
- * @returns {Object} { currentAdvDecRatio, zone, thrust: null }
+ * @param {Array} assets — tradData.assets (current day only, for fallback)
+ * @param {Array|null} breadthHistory — tradfi_breadth_history from snapshot
+ * @returns {Object} { currentAdvDecRatio, ema10, zone, thrust, history }
  */
-export function getBreadthThrust(assets) {
+export function getBreadthThrust(assets, breadthHistory = null) {
+  // Current-day values from assets (always available)
   const universe = assets.filter(a =>
     !EXCLUDED_THEMES.has(a.category) && a.ret1d != null
   );
-
   const advancers = universe.filter(a => a.ret1d > 0).length;
   const decliners = universe.filter(a => a.ret1d < 0).length;
   const total = advancers + decliners;
-  const ratio = total > 0 ? advancers / total : 0.5;
+  const currentRatio = total > 0 ? advancers / total : 0.5;
 
-  // Zone classification (single-day approximation)
+  // If we have historical breadth data, compute the full Zweig thrust
+  if (breadthHistory && breadthHistory.length >= 10) {
+    // Compute 10D EMA of adv/dec ratio
+    const ratios = breadthHistory.map(d => d.advDecRatio ?? (d.total > 0 ? d.advancers / d.total : 0.5));
+    const ema10 = computeEMA(ratios, 10);
+    const latestEma = ema10[ema10.length - 1];
+
+    // Check for thrust signal in last 15 calendar days:
+    // EMA moves from < 0.40 to > 0.615 within 10 sessions
+    let thrust = null;
+    const recentEma = ema10.slice(-15);
+    for (let i = 1; i < recentEma.length; i++) {
+      if (recentEma[i - 1] < 0.40 && recentEma[i] > 0.615) {
+        thrust = {
+          date: breadthHistory[breadthHistory.length - 15 + i]?.date,
+          from: recentEma[i - 1],
+          to: recentEma[i],
+        };
+        break;
+      }
+    }
+
+    // Zone classification based on 10D EMA
+    let zone = 'neutral';
+    if (latestEma < 0.40) zone = 'washed-out';
+    else if (latestEma > 0.615) zone = 'thrust-zone';
+    else if (latestEma < 0.45) zone = 'oversold';
+    else if (latestEma > 0.55) zone = 'strong';
+
+    return {
+      currentAdvDecRatio: currentRatio,
+      advancers,
+      decliners,
+      ema10: latestEma,
+      zone,
+      thrust,
+      history: ratios.slice(-30),  // last 30 days for charting
+      hasHistory: true,
+    };
+  }
+
+  // Fallback: single-day approximation
   let zone = 'neutral';
-  if (ratio < 0.30) zone = 'washed-out';
-  else if (ratio > 0.70) zone = 'thrust-zone';
+  if (currentRatio < 0.30) zone = 'washed-out';
+  else if (currentRatio > 0.70) zone = 'thrust-zone';
 
   return {
-    currentAdvDecRatio: ratio,
+    currentAdvDecRatio: currentRatio,
     advancers,
     decliners,
+    ema10: null,
     zone,
-    thrust: null,  // requires historical time series
-    note: 'Full Zweig thrust requires daily breadth history (not yet stored in snapshot)',
+    thrust: null,
+    hasHistory: false,
+    note: 'Historical breadth data not yet available — showing single-day ratio only.',
   };
+}
+
+// Simple EMA helper
+function computeEMA(values, period) {
+  const k = 2 / (period + 1);
+  const ema = [values[0]];
+  for (let i = 1; i < values.length; i++) {
+    ema.push(values[i] * k + ema[i - 1] * (1 - k));
+  }
+  return ema;
 }

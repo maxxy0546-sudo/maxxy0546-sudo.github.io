@@ -64,25 +64,20 @@ export default function LeveredETFTab({ tradData, isLoading }) {
     return m;
   }, [assets]);
 
-  // Compute z-score for each levered ETF (1D return / trailing 20D return stdev)
-  // Since tradData.assets doesn't have raw candle history, we approximate z-score
-  // using ret1d / (adrPct20 / 100) as a volatility-normalized return.
-  // (Full z-score would require 20 days of returns — SMB computes from raw prices.)
+  // Enrich levered ETFs with metrics from tradData
+  // z1d is now computed in computeTradMetrics() using the full SMB method:
+  // z = today's log-return / trailing 20D return stdev (excluding today)
   const enrichedETFs = useMemo(() => {
     return LEVERED_ETFS.map(etf => {
       const a = assetMap.get(etf.ticker);
       if (!a) return { ...etf, hasData: false, price: null, ret1d: null, ret5d: null, z1d: null, volRatio: null, distMa20: null, above20: null };
-      // Approximate z-score: today's return / ADR% (both in decimal)
-      // ADR% is the avg daily range, a proxy for daily volatility
-      const adrPct = a.adrPct20 ?? a.adrPct;
-      const z1d = (a.ret1d != null && adrPct && adrPct > 0) ? a.ret1d / (adrPct / 100) : null;
       return {
         ...etf,
         hasData: true,
         price: a.price,
         ret1d: a.ret1d,
         ret5d: a.ret5d,
-        z1d,
+        z1d: a.z1d,  // full SMB z-score from computeTradMetrics
         volRatio: a.volRatio,
         distMa20: a.distMa20,
         above20: a.above20,

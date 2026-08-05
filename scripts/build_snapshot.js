@@ -1042,6 +1042,85 @@ async function fetchTradfiSnapshot() {
   return out;
 }
 
+// ─── TradFi Breadth History — daily advancers/decliners for Zweig thrust ─────
+// Computes daily breadth from the tradfi OHLCV snapshot: for each trading day,
+// counts how many tickers advanced vs declined. Stores last 90 days as a time
+// series so the client can compute the 10D EMA breadth thrust.
+function computeTradfiBreadthHistory(tradfiOHLCV) {
+  if (!tradfiOHLCV || Object.keys(tradfiOHLCV).length === 0) return [];
+  console.log('── TradFi breadth history ──');
+  try {
+    // Exclude Benchmark, Levered, Forex categories — they're not individual stocks
+    // For simplicity, exclude known non-stock tickers
+    const excludeSet = new Set([
+      'SPY','QQQ','IWM','DIA','RSP','SPX','NDX','DJI','VIX','VXX','VXZ','UVXY',
+      'XAU','XAG','XCU','XPD','XPT','WTI','BRENTOIL','NATGAS','WHEAT',
+      'EURUSD','GBPUSD','USDJPY','USDCHF','USDCAD','AUDUSD','NZDUSD','USDKRW','USDHKD',
+      'US500','US100','KRCOMP',
+    ]);
+
+    // Also exclude all levered ETFs (they're derivatives, not individual stocks)
+    // Check by looking for the ticker in a levered set
+    const leveredSet = new Set([
+      'TQQQ','QLD','UPRO','SPXL','SSO','TNA','UWM','UDOW','SQQQ','QID','PSQ','SPXU','SPXS','SDS','SH','TZA','TWM','SDOW',
+      'SOXL','USD','TECL','ROM','FAS','LABU','NAIL','DPST','DRN','ERX','GUSH','NUGT','JNUG','CURE','RETL','UTSL',
+      'SOXS','SSG','TECS','REW','FAZ','LABD','ERY','DRIP','DUST','JDST','DRV',
+      'NVDL','NVDU','TSLL','TSLT','MSTU','MSTX','CONL','PLTU','AMDL','MUU','SNXX','WDCX','STXX','UPSX','TARK',
+      'AAPU','AAPB','AMZU','MSFU','METU','GGLL','AVL','NVDS','TSLQ','TSLZ','MSTZ','SNDQ','SARK',
+      'UVIX','SVIX','SVXY','BITX','BITU','ETHU','SBIT','ETHD','BOIL','KOLD','UCO','SCO','AGQ','ZSL','UGL','GLL','TMF','TMV','TBT',
+    ]);
+
+    // Collect all dates and build a date → {advancers, decliners, total, newHighs20d} map
+    const dateMap = new Map();
+
+    for (const [ticker, candles] of Object.entries(tradfiOHLCV)) {
+      if (excludeSet.has(ticker) || leveredSet.has(ticker)) continue;
+      if (!Array.isArray(candles) || candles.length < 2) continue;
+
+      // Track 20-day high for newHighs20d flag
+      const highs20d = [];
+
+      for (let i = 0; i < candles.length; i++) {
+        const c = candles[i];
+        const date = new Date(c.t).toISOString().slice(0, 10);
+        if (!dateMap.has(date)) {
+          dateMap.set(date, { date, advancers: 0, decliners: 0, total: 0, newHighs20d: 0 });
+        }
+        const entry = dateMap.get(date);
+
+        // Skip the first candle (no prior close to compare)
+        if (i > 0) {
+          entry.total++;
+          if (c.c > candles[i - 1].c) entry.advancers++;
+          else if (c.c < candles[i - 1].c) entry.decliners++;
+        }
+
+        // 20D new high: today's high is the max of last 20 highs (including today)
+        highs20d.push(c.h);
+        if (highs20d.length > 20) highs20d.shift();
+        if (highs20d.length === 20 && c.h >= Math.max(...highs20d)) {
+          entry.newHighs20d++;
+        }
+      }
+    }
+
+    // Sort by date, take last 90 days
+    const sorted = Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+    const result = sorted.slice(-90);
+
+    // Compute adv/dec ratio for each day
+    for (const d of result) {
+      d.advDecRatio = d.total > 0 ? d.advancers / d.total : 0.5;
+    }
+
+    console.log(`  ✓ TradFi breadth history: ${result.length} days, latest ${result[result.length - 1]?.date} (adv=${result[result.length - 1]?.advancers} dec=${result[result.length - 1]?.decliners})`);
+    return result;
+  } catch (e) {
+    console.warn(`  ✗ TradFi breadth history failed: ${e.message}`);
+    return [];
+  }
+}
+
 // ─── Regime History — server-side accumulation for consistent 90-day graph ──
 //
 // The MacroRegime page computes a daily nowcast score (growth, inflation,
@@ -1284,6 +1363,9 @@ async function main() {
   // Compute regime history server-side (appends today's nowcast to a 90-day rolling array)
   const regimeHistory = await computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _prevSnapshot, globalMetrics);
 
+  // Compute tradfi breadth history (daily advancers/decliners for Zweig thrust)
+  const tradfiBreadthHistory = computeTradfiBreadthHistory(tradfiOHLCV);
+
   // If an ETF flow asset failed to fetch (Farside 403/timeout), fall back to
   // the previous snapshot's data for that asset. This prevents rows from
   // disappearing from the ETF Flows table when Farside has a transient failure
@@ -1409,6 +1491,7 @@ async function main() {
     crypto_factor_history: cryptoFactors?.factorHistory || [],
     crypto_factor_spread_history: cryptoFactors?.spreadHistory || [],
     regime_history: regimeHistory,
+    tradfi_breadth_history: tradfiBreadthHistory,
     signal_metrics: signalMetrics,
     signal_history: signalHistory,
   };

@@ -22,8 +22,8 @@ import { fetchAllTickers as fetchHyperliquidTickers } from '@/lib/scanner/source
 import { getGloballyBlockedSources } from '@/lib/scanner/sourceResolver';
 
 // TradFi tabs clustered together (indices 2-6) so tradfi content stays grouped.
-// New SMB tabs: Levered ETFs, Theme Scores, ETF Pulse, Scanners.
-const TABS = ['Daily', 'Crypto', 'TradFi', 'Levered ETFs', 'Theme Scores', 'ETF Pulse', 'Scanners', 'Themes', 'Breadth', 'Momentum Scan', 'Momentum', 'Extension', 'Factor Monitor'];
+// Crypto Momentum Scan + Momentum + Extension tabs combined into single 'Momentum' tab.
+const TABS = ['Daily', 'Crypto', 'TradFi', 'Levered ETFs', 'Theme Scores', 'ETF Pulse', 'Scanners', 'Themes', 'Breadth', 'Momentum', 'Factor Monitor'];
 
 const DEFAULT_EXCHANGE = 'auto';
 
@@ -533,13 +533,17 @@ export default function Board() {
           {activeTab === 3 && <LeveredETFTab tradData={tradData} isLoading={tradLoading} />}
           {activeTab === 4 && <ThemeScoresTab tradData={tradData} isLoading={tradLoading} />}
           {activeTab === 5 && <EtfPulseTab tradData={tradData} isLoading={tradLoading} />}
-          {activeTab === 6 && <ScannersTab tradData={tradData} isLoading={tradLoading} />}
+          {activeTab === 6 && <ScannersTab tradData={tradData} isLoading={tradLoading} breadthHistory={snapshotData?.tradfi_breadth_history} />}
           {activeTab === 7 && <ThemesTab themes={themes} constituents={constituents} />}
           {activeTab === 8 && <BreadthTab breadthSeries={breadthSeries} />}
-          {activeTab === 9 && <MomentumScanTab momentumScan={momentumScan} />}
-          {activeTab === 10 && <MomentumTab cleanMomentum={cleanMomentum} />}
-          {activeTab === 11 && <ExtensionTab tooHot={tooHot} fading={fading} />}
-          {activeTab === 12 && <FactorMonitor />}
+          {activeTab === 9 && (
+            <>
+              <MomentumScanTab momentumScan={momentumScan} />
+              <MomentumTab cleanMomentum={cleanMomentum} />
+              <ExtensionTab tooHot={tooHot} fading={fading} />
+            </>
+          )}
+          {activeTab === 10 && <FactorMonitor />}
         </>
       )}
 

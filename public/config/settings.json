@@ -32,5 +32,23 @@
     },
     "momentum_scale": { "low": -0.10, "high": 0.15 },
     "rs_scale_factor": 500
+  },
+  "crypto": {
+    "theme_scoring": {
+      "momentum_scale": { "low": -0.20, "high": 0.30 },
+      "rs_scale_factor": 500,
+      "min_names": 3
+    },
+    "extension": {
+      "too_hot_atr_threshold": 12.0,
+      "clean_momentum_atr_min": 1.0,
+      "clean_momentum_atr_max": 8.0,
+      "clean_momentum_min_vol_ratio": 1.0,
+      "clean_momentum_min_ret_5d": 0.0
+    },
+    "breadth": {
+      "big_move_threshold": 0.08
+    },
+    "fading_threshold": -0.05
   }
 }

@@ -1230,6 +1230,35 @@ function computeTradMetrics(candles) {
   // RSI 14
   const rsi14 = computeRsi(closes, 14);
 
+  // ── 1D Z-score (full SMB method) ──────────────────────────────────────────
+  // z = today's log-return / trailing 20D return stdev (excluding today)
+  // Critical for leveraged ETFs: a -9% day means nothing on a 3x product
+  // without volatility normalization.
+  let z1d = null;
+  if (n >= 21) {
+    const logReturns = [];
+    for (let i = 1; i < n; i++) {
+      if (closes[i] > 0 && closes[i - 1] > 0) {
+        logReturns.push(Math.log(closes[i] / closes[i - 1]));
+      }
+    }
+    if (logReturns.length >= 20) {
+      // Use the last 20 returns EXCLUDING today (shift(1) in pandas)
+      const hist = logReturns.slice(0, -1).slice(-20);
+      if (hist.length >= 15) {
+        const mean = hist.reduce((s, v) => s + v, 0) / hist.length;
+        const variance = hist.reduce((s, v) => s + (v - mean) ** 2, 0) / (hist.length - 1);
+        const sd = Math.sqrt(variance);
+        if (sd > 1e-9) {
+          const todayReturn = closes[n - 1] > 0 && closes[n - 2] > 0
+            ? Math.log(closes[n - 1] / closes[n - 2])
+            : 0;
+          z1d = todayReturn / sd;
+        }
+      }
+    }
+  }
+
   const sparkline = closes.slice(-30);
 
   return {
@@ -1244,6 +1273,7 @@ function computeTradMetrics(candles) {
     trendTenure,
     high20d, high52w, low52w, pctFrom52wHigh,
     newHigh20d, newHigh52w,
+    z1d,
     rsi14,
     sparkline,
   };

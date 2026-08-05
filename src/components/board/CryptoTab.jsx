@@ -114,7 +114,8 @@ export default function CryptoTab({ cryptoAssets }) {
     { key: 'atrExt50ma', label: 'ATR' },
     { key: 'rsi14', label: 'RSI' },
     { key: 'rs_btc_20d', label: 'RS/BTC' },
-    { key: 'volRatio', label: 'Vol' },
+    { key: 'volRatio', label: 'rVOL' },
+    { key: 'adrUsedPct', label: 'ADR%' },
     { key: 'oiRatio', label: 'OI/MC' },
   ];
 
@@ -215,8 +216,10 @@ export default function CryptoTab({ cryptoAssets }) {
                   <td className="py-2 px-2.5"><span className="tabular-nums text-[10px] font-semibold" style={{ color: rsiColor(item.rsi14) }}>{item.rsi14 != null ? item.rsi14.toFixed(0) : '—'}</span></td>
                   {/* RS/BTC */}
                   <td className="py-2 px-2.5"><span className="tabular-nums text-[10px] font-semibold" style={{ color: retColor(item.rs_btc_20d) }}>{item.rs_btc_20d != null ? fmtPctRaw(item.rs_btc_20d * 100) : '—'}</span></td>
-                  {/* Vol Ratio */}
-                  <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: 'var(--scanner-text2)' }}>{item.volRatio != null ? item.volRatio.toFixed(1) + 'x' : '—'}</span></td>
+                  {/* Vol Ratio (rVOL) */}
+                  <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: item.volRatio >= 2 ? 'var(--scanner-accent)' : item.volRatio >= 1.5 ? 'var(--scanner-green)' : 'var(--scanner-text2)' }}>{item.volRatio != null ? item.volRatio.toFixed(1) + 'x' : '—'}</span></td>
+                  {/* ADR Used % (exhaustion read: today's range / trailing 20D ADR$) */}
+                  <td className="py-2 px-2.5"><span className="tabular-nums text-[10px]" style={{ color: item.adrUsedPct >= 150 ? 'var(--scanner-accent)' : item.adrUsedPct <= 50 ? 'var(--scanner-text3)' : 'var(--scanner-text2)' }} title="ADR Used: today's range / trailing 20D avg range. 150%+ = stretched, 50%- = room left.">{item.adrUsedPct != null ? item.adrUsedPct.toFixed(0) + '%' : '—'}</span></td>
                   {/* OI/MC */}
                   <td className="py-2 px-2.5">
                     <span

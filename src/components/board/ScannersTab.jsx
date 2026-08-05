@@ -53,14 +53,14 @@ function SubTab({ active, onClick, children }) {
   );
 }
 
-export default function ScannersTab({ tradData, isLoading }) {
+export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
   const assets = tradData?.assets || [];
   const [subTab, setSubTab] = useState('newHighsLows');
 
   const newHighsLows = useMemo(() => getNewHighsLows(assets), [assets]);
   const rvolScan = useMemo(() => getRvolScan(assets, { minRatio: 1.5, topN: 30 }), [assets]);
   const etfExtension = useMemo(() => getEtfExtension(assets), [assets]);
-  const breadthThrust = useMemo(() => getBreadthThrust(assets), [assets]);
+  const breadthThrust = useMemo(() => getBreadthThrust(assets, breadthHistory || null), [assets, breadthHistory]);
 
   if (isLoading && !tradData) {
     return (

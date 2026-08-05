@@ -87,13 +87,26 @@ function computeMetrics(candles) {
 
   const atrExt50ma = (ma50 != null && atr14 != null && atr14 > 0) ? (price - ma50) / atr14 : null;
 
-  // Average Daily Range % — mean of (high/low - 1) over 20 days, as a percentage.
+  // Average Daily Range % — multi-window (5, 14, 20 days) + ADR used today
   // Distinct from atr14 above: this is unsmoothed and gap-agnostic (pure high/low),
   // which is what makes it comparable across assets the way a raw ATR value isn't.
-  const rangePct = candles.slice(-20)
-    .map(c => c.low > 0 ? (c.high / c.low - 1) * 100 : null)
-    .filter(v => v != null);
-  const adrPct = rangePct.length >= 10 ? rangePct.reduce((a, b) => a + b, 0) / rangePct.length : null;
+  const dailyRangePct = candles.map(c => c.low > 0 ? (c.high / c.low - 1) * 100 : 0);
+  const dailyRangeAbs = candles.map(c => c.high - c.low);
+
+  const adrPct5  = dailyRangePct.length >= 5  ? dailyRangePct.slice(-5).reduce((a,b)=>a+b,0) / Math.min(5, dailyRangePct.length) : null;
+  const adrPct14 = dailyRangePct.length >= 14 ? dailyRangePct.slice(-14).reduce((a,b)=>a+b,0) / Math.min(14, dailyRangePct.length) : null;
+  const adrPct20 = dailyRangePct.length >= 10 ? dailyRangePct.slice(-20).reduce((a,b)=>a+b,0) / Math.min(20, dailyRangePct.length) : null;
+  const adrPct = adrPct20; // backward compat alias
+
+  // ADR used today: today's range / trailing 20D ADR$ (using yesterday's ADR)
+  // Crypto trades 24/7 — "today" = last 24h candle. 150% = stretched, 30% = room left.
+  let adrUsedPct = null;
+  if (n >= 21 && dailyRangeAbs.length >= 21) {
+    const priorAdrAbs20 = dailyRangeAbs.slice(0, -1).slice(-20).reduce((a,b)=>a+b,0) / 20;
+    if (priorAdrAbs20 > 0) {
+      adrUsedPct = (dailyRangeAbs[n - 1] / priorAdrAbs20) * 100;
+    }
+  }
 
   // Trend Tenure — consecutive days closing above the 50MA, counting back from today.
   // Needs a real rolling 50MA at every prior day, not just today's — built with a
@@ -173,7 +186,8 @@ function computeMetrics(candles) {
     above20, above50, above200,
     atr14, atrExt50ma, volRatio,
     rsi14,
-    adrPct, trendTenure,
+    adrPct, adrPct5, adrPct14, adrPct20, adrUsedPct,
+    trendTenure,
     newHigh20d, newHigh52w, distMa20, distMa50, distMa200,
     sparkline,
     ...momData,
@@ -204,9 +218,11 @@ function scoreTheme(metrics, themeName) {
     .filter(m => m.rs_btc_20d != null)
     .reduce((s, m) => s + m.rs_btc_20d, 0) / Math.max(valid.filter(m => m.rs_btc_20d != null).length, 1);
 
+  // Crypto-specific momentum scale: wider than tradfi [-20%, +30%] vs [-10%, +15%]
+  // Crypto moves 2-3x more than equities, so the scale must accommodate.
   const breadth    = (pctAbove20 + pctAbove50) / 2;
   const leadership = pctNewHigh20 * 0.6 + pctAbove200 * 0.4;
-  const momentum   = scaleTo100(avgRet20, -0.10, 0.15);
+  const momentum   = scaleTo100(avgRet20, -0.20, 0.30);
   const rsComponent = Math.max(0, Math.min(100, 50 + avg_rs_btc_20d * 500));
 
   const score = Math.max(0, Math.min(100,
@@ -1148,11 +1164,14 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
   // Theme Sector Rotation
   const themeSectorRotation = buildThemeSectorRotation(themes);
 
-  // Extension Lists
+  // Extension Lists — crypto-specific thresholds (wider than tradfi)
+  // too_hot: ≥12 ATR above 50DMA (crypto is 2-3x more volatile than equities)
+  // clean_momentum: ATR ext [1, 8] (wider range than tradfi's [1, 5])
+  // fading: lost 20DMA + 5D return < -5% (crypto threshold, -3% for tradfi)
   const coreTier = rawResults.filter(r => r.metrics && (r.asset.tier === 'Core' || r.asset.tier === 'Active'));
 
   const tooHot = coreTier
-    .filter(r => r.metrics.atrExt50ma != null && r.metrics.atrExt50ma >= 4)
+    .filter(r => r.metrics.atrExt50ma != null && r.metrics.atrExt50ma >= 12)
     .sort((a, b) => b.metrics.atrExt50ma - a.metrics.atrExt50ma)
     .slice(0, 20)
     .map(r => ({ ...r.asset, ...r.metrics }));
@@ -1163,7 +1182,7 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
       const m = r.metrics;
       return m.above20 === 1 && m.above50 === 1 &&
              m.ret5d > 0 &&
-             m.atrExt50ma != null && m.atrExt50ma >= 1 && m.atrExt50ma <= 5 &&
+             m.atrExt50ma != null && m.atrExt50ma >= 1 && m.atrExt50ma <= 8 &&
              m.volRatio != null && m.volRatio > 1;
     })
     .sort((a, b) => (b.metrics.rs_btc_20d ?? 0) - (a.metrics.rs_btc_20d ?? 0))
@@ -1173,7 +1192,7 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
   const fading = coreTier
     .filter(r => {
       const m = r.metrics;
-      return m.above20 === 0 && m.ret5d != null && m.ret5d < -0.03;
+      return m.above20 === 0 && m.ret5d != null && m.ret5d < -0.05;
     })
     .sort((a, b) => (a.metrics.ret5d ?? 0) - (b.metrics.ret5d ?? 0))
     .slice(0, 20)
