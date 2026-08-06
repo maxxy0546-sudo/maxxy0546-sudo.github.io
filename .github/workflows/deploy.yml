@@ -56,12 +56,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0  # need full history to push back to gh-pages
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -136,10 +136,10 @@ jobs:
           touch dist/.nojekyll
 
       - name: Setup Pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v5
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: ./dist
 
@@ -148,7 +148,7 @@ jobs:
         # fails transiently with "Deployment failed, try again later."
         # (seen July 4 and July 5). The artifact is already uploaded by
         # the previous step, so retrying just asks GitHub to deploy it again.
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
         id: deploy
         continue-on-error: true
 
@@ -161,7 +161,7 @@ jobs:
 
       - name: Deploy to GitHub Pages (retry)
         if: steps.deploy.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       - name: Post-deploy smoke test
         # Wait for the Pages CDN to propagate, then verify the live site
@@ -227,7 +227,7 @@ jobs:
       actions: read
     steps:
       - name: Find or open issue
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         with:
           script: |
             const label = 'ci-failure';
