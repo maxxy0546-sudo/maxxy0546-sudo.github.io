@@ -210,45 +210,6 @@
 .adr-toggle button.active {
   background: var(--scanner-accent); color: #0a0d14;
 }
-
-/* ═══ Item 9: Light theme ════════════════════════════════════════════════════ */
-html.light-mode {
-  --scanner-bg: #e8e8ec;
-  --scanner-bg1: #f0f0f4;
-  --scanner-bg2: #e0e0e6;
-  --scanner-bg3: #d4d4dc;
-  --scanner-border: #c8c8d0;
-  --scanner-border2: #b8b8c4;
-  --scanner-border3: #a0a0b0;
-  --scanner-text: #1a1a24;
-  --scanner-text2: #4a4a58;
-  --scanner-text3: #80808e;
-  --scanner-accent: #d48800;
-  --scanner-accent-bright: #e6a020;
-  --scanner-green: #00a050;
-  --scanner-green-bright: #00b060;
-  --scanner-red: #d03030;
-  --scanner-red-bright: #e04040;
-  --scanner-blue: #2070d0;
-  --scanner-warn: #b08020;
-  --scanner-warn-bright: #c09030;
-  --scanner-fast: #c0a000;
-  --scanner-slow: #b000b0;
-  --scanner-base: #00a0c0;
-
-  --heat-red-3: #d44040; --heat-red-2: #c03030; --heat-red-1: #a02828;
-  --heat-neu:   #c0c0c8;
-  --heat-grn-1: #2d8050; --heat-grn-2: #209040; --heat-grn-3: #00a050;
-}
-/* Keep NavBar dark in light mode (mirrors SMB's .topbar re-scope) */
-html.light-mode nav,
-html.light-mode .nav-bar {
-  --scanner-bg: #07070a; --scanner-bg1: #0c0c10; --scanner-bg2: #111118;
-  --scanner-text: #d0d0c4; --scanner-text2: #b0b0c4; --scanner-text3: #7a7a90;
-}
-html.light-mode .h-pos-1 { color: #2f8f57; }
-html.light-mode .h-neg-1 { color: #c05553; }
-html.light-mode .board-table tbody tr:hover { background: rgba(0,0,0,0.04); }
 /* ── TradingView chart panel — mobile responsiveness ──────────────────── */
 /* On mobile (below sm breakpoint = 640px), constrain the sheet to a
    bottom-oriented panel that doesn't fill the entire screen. The sheet.jsx

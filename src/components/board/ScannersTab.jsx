@@ -144,7 +144,7 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
             <table id="rvol-table" className="board-table w-full border-collapse min-w-[800px]">
               <thead>
                 <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>Ticker</th>
+                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)', position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' }}>Ticker</th>
                   <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>rVOL</th>
                   <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Price</th>
                   <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>1D %</th>
@@ -162,7 +162,7 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
                       style={{ borderBottom: '1px solid var(--scanner-border)' }}
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <td className="py-2 px-2.5">
+                      <td className="py-2 px-2.5" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
                         <span className="text-[11px] font-bold" style={{ color: 'var(--scanner-text)' }}>{a.symbol}</span>
                         <span className="text-[9px] ml-1" style={{ color: 'var(--scanner-text3)' }}>{a.category}</span>
                       </td>
@@ -202,10 +202,10 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
             ETF Extension Rank · sorted by ATR ext from 50DMA
           </SectionLabel>
           <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-            <table id="rvol-table" className="board-table w-full border-collapse min-w-[800px]">
+            <table id="etf-extension-table" className="board-table w-full border-collapse min-w-[800px]">
               <thead>
                 <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>Ticker</th>
+                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)', position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' }}>Ticker</th>
                   <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>ATR Ext</th>
                   <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Price</th>
                   <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>5D %</th>
@@ -222,7 +222,7 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
                     style={{ borderBottom: '1px solid var(--scanner-border)' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <td className="py-2 px-2.5">
+                    <td className="py-2 px-2.5" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
                       <span className="text-[11px] font-bold" style={{ color: 'var(--scanner-text)' }}>{a.symbol}</span>
                       <span className="text-[9px] ml-1" style={{ color: 'var(--scanner-text3)' }}>{a.category}</span>
                     </td>

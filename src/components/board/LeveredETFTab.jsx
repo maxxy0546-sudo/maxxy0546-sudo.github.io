@@ -10,9 +10,10 @@
  * without volatility normalization.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { LEVERED_ETFS, LEVERED_CATEGORY_ORDER } from '@/lib/board/leveredETFs';
 import CopyCsvButtons from './CopyCsvButtons';
+import { sortRows } from '@/lib/board/tableUtils';
 
 function fmtPct(v, decimals = 2) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -86,16 +87,33 @@ export default function LeveredETFTab({ tradData, isLoading }) {
     });
   }, [assetMap]);
 
-  // Group by category, sort by |z| within each group
+  // Sort state — per-category sort (shared across categories for simplicity)
+  const [sortCol, setSortCol] = useState('z1d');
+  const [sortDir, setSortDir] = useState('desc');
+
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      setSortDir(prev => prev === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSortCol(col);
+      setSortDir('desc');
+    }
+  };
+
+  const getSortClass = (col) => {
+    if (sortCol !== col) return '';
+    return sortDir === 'desc' ? 'sort-desc' : 'sort-asc';
+  };
+
+  // Group by category, sorted by selected column within each group
   const grouped = useMemo(() => {
     const groups = {};
     for (const cat of LEVERED_CATEGORY_ORDER) {
-      groups[cat] = enrichedETFs
-        .filter(e => e.category === cat)
-        .sort((a, b) => Math.abs(b.z1d || 0) - Math.abs(a.z1d || 0));
+      const catRows = enrichedETFs.filter(e => e.category === cat);
+      groups[cat] = sortRows(catRows, e => e[sortCol] ?? (sortCol === 'z1d' ? Math.abs(e.z1d || 0) : null), sortDir);
     }
     return groups;
-  }, [enrichedETFs]);
+  }, [enrichedETFs, sortCol, sortDir]);
 
   // Long-vs-short risk-appetite summary
   const summary = useMemo(() => {
@@ -164,15 +182,15 @@ export default function LeveredETFTab({ tradData, isLoading }) {
               <table id={`levered-${cat.replace(/\s/g, '-').toLowerCase()}-table`} className="board-table w-full border-collapse min-w-[700px]">
                 <thead>
                   <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-                    <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>Ticker</th>
+                    <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-left ${getSortClass('ticker')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer', position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' }} onClick={() => handleSort('ticker')}>Ticker</th>
                     <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>Label</th>
-                    <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Dir</th>
-                    <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Lev</th>
-                    <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Price</th>
-                    <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>1D Z</th>
-                    <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>1D %</th>
-                    <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>5D %</th>
-                    <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>rVOL</th>
+                    <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right ${getSortClass('direction')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('direction')}>Dir</th>
+                    <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right ${getSortClass('leverage')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('leverage')}>Lev</th>
+                    <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right ${getSortClass('price')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('price')}>Price</th>
+                    <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right ${getSortClass('z1d')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('z1d')}>1D Z</th>
+                    <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right ${getSortClass('ret1d')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('ret1d')}>1D %</th>
+                    <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right ${getSortClass('ret5d')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('ret5d')}>5D %</th>
+                    <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right ${getSortClass('volRatio')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('volRatio')}>rVOL</th>
                     <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>≥20MA</th>
                   </tr>
                 </thead>
@@ -182,7 +200,7 @@ export default function LeveredETFTab({ tradData, isLoading }) {
                       style={{ borderBottom: '1px solid var(--scanner-border)' }}
                       onMouseEnter={ev => ev.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
                       onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}>
-                      <td className="py-1.5 px-2.5">
+                      <td className="py-1.5 px-2.5" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
                         <span className="text-[11px] font-bold" style={{ color: 'var(--scanner-text)' }}>{e.ticker}</span>
                       </td>
                       <td className="py-1.5 px-2.5">

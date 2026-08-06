@@ -3,16 +3,6 @@
   <head>
     <meta charset="UTF-8" />
 
-    <!-- FOUC prevention: apply saved theme before paint -->
-    <script>
-      (function() {
-        try {
-          var t = localStorage.getItem('trendscan_theme');
-          if (t === 'light') document.documentElement.classList.add('light-mode');
-        } catch(e) {}
-      })();
-    </script>
-
     <!-- Preconnect to key API origins — saves DNS + TLS round-trips on first fetch -->
     <link rel="preconnect" href="https://api.hyperliquid.xyz" />
     <link rel="preconnect" href="https://api.coingecko.com" />

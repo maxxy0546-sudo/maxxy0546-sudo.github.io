@@ -98,8 +98,8 @@ export default function ThemeScoresTab({ tradData, isLoading }) {
           <table id="theme-scores-table" className="board-table w-full border-collapse min-w-[900px]">
             <thead>
               <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left ${getSortClass('rank')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('rank')}>#</th>
-                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left ${getSortClass('theme')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('theme')}>Theme</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left ${getSortClass('rank')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer', position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' }} onClick={() => handleSort('rank')}>#</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left ${getSortClass('theme')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer', position: 'sticky', left: '32px', zIndex: 10, background: 'var(--scanner-bg2)' }} onClick={() => handleSort('theme')}>Theme</th>
                 <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('nNames')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('nNames')}>N</th>
                 <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('score')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('score')}>Score</th>
                 <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('score1dDelta')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('score1dDelta')}>1D Δ</th>
@@ -120,10 +120,10 @@ export default function ThemeScoresTab({ tradData, isLoading }) {
                   style={{ borderBottom: '1px solid var(--scanner-border)' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <td className="py-2 px-2.5">
+                  <td className="py-2 px-2.5" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
                     <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-text3)' }}>{t.rank}</span>
                   </td>
-                  <td className="py-2 px-2.5">
+                  <td className="py-2 px-2.5" style={{ position: 'sticky', left: '32px', zIndex: 5, background: 'var(--scanner-bg1)' }}>
                     <span className="text-[11px] font-bold" style={{ color: 'var(--scanner-text)' }}>{t.theme}</span>
                   </td>
                   <td className="py-2 px-2.5 text-right">
