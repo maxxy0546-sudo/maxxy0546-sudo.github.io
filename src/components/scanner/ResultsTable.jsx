@@ -1,6 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { fmtPrice, fmtPct } from '@/lib/scanner/calculations';
 import { toTradingViewSymbol } from '@/lib/scanner/tradingViewSymbols';
+import { tableToCsv, downloadCsv } from '@/lib/board/tableUtils';
 
 function fmtChange(v) {
   if (v == null) return '—';
@@ -99,38 +100,31 @@ function MiniSparkline({ data, positive }) {
   );
 }
 
-const SORT_OPTIONS = [
-  { key: 'rank', label: 'Rank' },
-  { key: 'change24h', label: '24h Δ' },
-  { key: 'volume24h', label: 'VOL' },
-  { key: 'rVol', label: 'rVOL' },
-  { key: 'rsi', label: 'RSI' },
-  { key: 'marketCap', label: 'MCAP' },
-  { key: 'fundingRate', label: 'FUND' },
-  { key: 'openInterest', label: 'OI' },
-  { key: 'pricePct', label: 'Δ Base' },
-  { key: 'emaPct', label: 'Δ Spread' },
+const SORTABLE_COLS = [
+  'rank', 'symbol', 'price', 'change1h', 'change24h', 'volume24h', 'rVol',
+  'rsi', 'marketCap', 'fundingRate', 'openInterest', 'oiRatio', 'pricePct', 'emaPct',
 ];
 
 export default function ResultsTable({ results, settings, isScanning, onSelectRow, hasScanned }) {
   const [sortKey, setSortKey] = useState('rank');
+  /** @type {[('desc'|'asc'), function]} */
+  const [sortDir, setSortDir] = useState('desc');
   const [copied, setCopied] = useState(null);
+  const [csvDone, setCsvDone] = useState(false);
+  const tableRef = useCallback(() => document.getElementById('scanner-results-table'), []);
 
   const handleCopy = useCallback((format) => {
     if (!results.length) return;
     let text;
     if (format === 'tv') {
-      // TradingView-formatted symbols: HYPERLIQUID:BTCUSDC.P, HYPERLIQUID:ETHUSDC.P
       text = results.map(r => toTradingViewSymbol(r.symbol, settings.exchange)).join(', ');
     } else {
-      // Bare tickers: BTC, ETH, SOL
       text = results.map(r => r.symbol).join(', ');
     }
     navigator.clipboard.writeText(text).then(() => {
       setCopied(format);
       setTimeout(() => setCopied(null), 2000);
     }).catch(() => {
-      // Fallback for older browsers
       const textarea = document.createElement('textarea');
       textarea.value = text;
       textarea.style.position = 'fixed';
@@ -144,19 +138,45 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
     });
   }, [results, settings.exchange]);
 
-  const sorted = [...results].sort((a, b) => {
-    if (sortKey === 'rank') return a.rank - b.rank;
-    if (sortKey === 'pricePct') return b.pricePct - a.pricePct;
-    if (sortKey === 'emaPct') return b.emaPct - a.emaPct;
-    if (sortKey === 'change24h') return (b.change24h ?? -999) - (a.change24h ?? -999);
-    if (sortKey === 'volume24h') return (b.volume24h ?? 0) - (a.volume24h ?? 0);
-    if (sortKey === 'marketCap') return (b.marketCap ?? 0) - (a.marketCap ?? 0);
-    if (sortKey === 'fundingRate') return (b.fundingRate ?? -999) - (a.fundingRate ?? -999);
-    if (sortKey === 'openInterest') return (b.openInterest ?? 0) - (a.openInterest ?? 0);
-    if (sortKey === 'rVol') return (b.rVol ?? 0) - (a.rVol ?? 0);
-    if (sortKey === 'rsi') return (b.rsi ?? -1) - (a.rsi ?? -1);
-    return 0;
-  });
+  const handleCsv = useCallback(() => {
+    const tbl = document.getElementById('scanner-results-table');
+    if (!tbl) return;
+    const csv = tableToCsv(tbl);
+    const date = new Date().toISOString().slice(0, 10);
+    downloadCsv(`scanner_results_${date}.csv`, csv);
+    setCsvDone(true);
+    setTimeout(() => setCsvDone(false), 2000);
+  }, []);
+
+  const handleSort = useCallback((key) => {
+    if (!key || !SORTABLE_COLS.includes(key)) return;
+    if (sortKey === key) {
+      setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+  }, [sortKey]);
+
+  const getSortClass = useCallback((key) => {
+    if (sortKey !== key) return '';
+    return sortDir === 'desc' ? 'sort-desc' : 'sort-asc';
+  }, [sortKey, sortDir]);
+
+  const sorted = useMemo(() => {
+    const arr = [...results];
+    const dir = sortDir === 'desc' ? -1 : 1;
+    arr.sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+    return arr;
+  }, [results, sortKey, sortDir]);
 
   const maxPricePct = Math.max(...sorted.map(r => r.pricePct), 1);
   const maxEmaPct = Math.max(...sorted.map(r => r.emaPct), 1);
@@ -182,7 +202,7 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
             </span>
           </div>
 
-          {/* Copy buttons — only show when there are results */}
+          {/* Copy + CSV buttons — only show when there are results */}
           {results.length > 0 && (
             <div className="flex items-center gap-1.5">
               <button
@@ -195,7 +215,7 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
                   whiteSpace: 'nowrap',
                 }}
                 onClick={() => handleCopy('tv')}
-                title="Copy as TradingView symbols (e.g. HYPERLIQUID:BTCUSDC.P)"
+                title="Copy as TradingView symbols"
               >
                 {copied === 'tv' ? '✓ Copied' : '⧉ Copy TV'}
               </button>
@@ -209,47 +229,44 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
                   whiteSpace: 'nowrap',
                 }}
                 onClick={() => handleCopy('tickers')}
-                title="Copy bare tickers (e.g. BTC, ETH, SOL)"
+                title="Copy bare tickers"
               >
                 {copied === 'tickers' ? '✓ Copied' : '⧉ Tickers'}
+              </button>
+              <button
+                className="font-mono text-[9px] font-semibold tracking-[0.08em] px-2.5 py-1.5 rounded transition-all"
+                style={{
+                  background: csvDone ? 'rgba(0,230,118,0.12)' : 'var(--scanner-bg2)',
+                  border: `1px solid ${csvDone ? 'var(--scanner-green)' : 'var(--scanner-border2)'}`,
+                  color: csvDone ? 'var(--scanner-green)' : 'var(--scanner-text3)',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+                onClick={handleCsv}
+                title="Download results as CSV"
+              >
+                {csvDone ? '✓ Downloaded' : '⬇ CSV'}
               </button>
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-[9px] font-semibold tracking-[0.1em] uppercase" style={{ color: 'var(--scanner-text3)' }}>Sort</span>
-          <div className="flex gap-1">
-            {SORT_OPTIONS.map(opt => (
-              <button
-                key={opt.key}
-                className="font-mono text-[9px] font-semibold tracking-[0.08em] px-2.5 py-1.5 rounded transition-all"
-                style={{
-                  background: sortKey === opt.key ? 'rgba(245,158,11,0.12)' : 'var(--scanner-bg2)',
-                  border: `1px solid ${sortKey === opt.key ? 'var(--scanner-accent)' : 'var(--scanner-border2)'}`,
-                  color: sortKey === opt.key ? 'var(--scanner-accent)' : 'var(--scanner-text3)',
-                  cursor: 'pointer'
-                }}
-                onClick={() => setSortKey(opt.key)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <span className="text-[9px] font-semibold tracking-[0.1em] uppercase" style={{ color: 'var(--scanner-text3)' }}>
+          Click column headers to sort
+        </span>
       </div>
 
       {sorted.length === 0 ? (
         <EmptyState isScanning={isScanning} hasScanned={hasScanned} />
       ) : (
         <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--scanner-border2)' }}>
-          <table className={`w-full border-collapse ${isTradFi ? 'min-w-[900px]' : 'min-w-[1300px]'}`}>
+          <table id="scanner-results-table" className={`board-table w-full border-collapse ${isTradFi ? 'min-w-[900px]' : 'min-w-[1300px]'}`}>
             <thead>
               <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
                 {[
                   { key: null, label: '' },
-                  { key: null, label: 'Asset' },
-                  { key: null, label: 'Price', right: true },
+                  { key: 'symbol', label: 'Asset' },
+                  { key: 'price', label: 'Price', right: true },
                   { key: null, label: '7D', right: true },
                   { key: 'change1h', label: '1h Δ', right: true, cryptoOnly: true },
                   { key: 'change24h', label: '24h Δ', right: true },
@@ -268,16 +285,15 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
                 ].filter(col => !isTradFi || !col.cryptoOnly).map((col, i) => (
                   <th
                     key={i}
-                    className={`text-[8.5px] font-semibold tracking-[0.08em] uppercase whitespace-nowrap py-2 px-2.5 ${col.right ? 'text-right' : 'text-left'}`}
+                    className={`text-[8.5px] font-semibold tracking-[0.08em] uppercase whitespace-nowrap py-2 px-2.5 ${col.right ? 'text-right' : 'text-left'} ${col.key ? getSortClass(col.key) : ''}`}
                     style={{
-                      color: sortKey === col.key ? 'var(--scanner-accent)' : 'var(--scanner-text3)',
+                      color: 'var(--scanner-text3)',
                       cursor: col.key ? 'pointer' : 'default',
                       ...(i <= 1 ? { position: 'sticky', left: i === 0 ? 0 : '32px', zIndex: 10, background: 'var(--scanner-bg2)' } : {}),
                     }}
-                    onClick={() => col.key && setSortKey(col.key)}
+                    onClick={() => handleSort(col.key)}
                   >
                     {col.label}
-                    {sortKey === col.key && <span className="ml-0.5 opacity-60"> ↓</span>}
                   </th>
                 ))}
               </tr>
