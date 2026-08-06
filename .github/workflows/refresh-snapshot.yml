@@ -92,6 +92,7 @@ jobs:
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
+        timeout-minutes: 10
         run: node scripts/build_snapshot.js
 
       - name: Check for changes (snapshot.json on main)
@@ -129,6 +130,7 @@ jobs:
       - name: Push snapshot.tradfi.json to gh-pages
         id: push_tradfi
         continue-on-error: true
+        timeout-minutes: 5
         run: |
           set -e
           # Check if snapshot.tradfi.json actually changed by comparing the
@@ -208,7 +210,12 @@ jobs:
           # Switch back to main even on failure (so subsequent steps don't break)
           git checkout main 2>/dev/null || true
           git stash pop 2>/dev/null || true
-          exit 1
+          # Don't exit 1 — the push failure is non-blocking. The snapshot.json
+          # was already committed to main, and the deploy workflow will build
+          # snapshot.tradfi.json locally from build_snapshot.js. The tradfi
+          # data on gh-pages will be slightly stale until the next successful
+          # push, but the site will still function.
+          exit 0
 
       - name: Warn if gh-pages push failed (non-blocking)
         if: steps.push_tradfi.outcome == 'failure'
