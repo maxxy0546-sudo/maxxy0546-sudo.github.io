@@ -15,6 +15,7 @@ import ScannersTab from '@/components/board/ScannersTab';
 import MassiveApiKeyInput from '@/components/scanner/MassiveApiKeyInput';
 import FactorMonitor from '@/components/board/FactorMonitor';
 import QuickViewBar from '@/components/board/QuickViewBar';
+import BoardToolbar from '@/components/board/BoardToolbar';
 import FreshnessBanner from '@/components/FreshnessBanner';
 import { runBoardAnalysis } from '@/lib/board/boardEngine';
 import { fetchTradMarketData, buildTradDataFromSnapshot } from '@/lib/board/traditionalMarkets';
@@ -483,8 +484,9 @@ export default function Board() {
       {/* Quick View Bar — 5 market summary metrics (from board scan) + Extreme OI (independent fetch) */}
       <QuickViewBar quickView={{ ...(quickView || {}), extremeOI }} />
 
-      {/* Tab bar */}
-      <div className="flex items-end gap-0 px-5 md:px-8 mt-4" style={{ borderBottom: '1px solid var(--scanner-border2)' }}>
+      {/* Tab bar + toolbar */}
+      <div className="flex items-end justify-between px-5 md:px-8 mt-4" style={{ borderBottom: '1px solid var(--scanner-border2)' }}>
+        <div className="flex items-end gap-0">
         {TABS.map((tab, i) => (
           <button
             key={tab}
@@ -502,6 +504,10 @@ export default function Board() {
             {tab}
           </button>
         ))}
+        </div>
+        <div className="pb-2">
+          <BoardToolbar />
+        </div>
       </div>
 
       {/* Tab content */}

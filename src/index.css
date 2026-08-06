@@ -47,6 +47,20 @@
     --scanner-green: #00e676;       /* green — positive returns */
     --scanner-red: #ff4444;         /* red — negative returns */
     --scanner-blue: #4d9fff;        /* blue — legacy, kept for non-indicator uses */
+    --scanner-green-bright: #4cc97a;
+    --scanner-red-bright: #e85a58;
+    --scanner-warn: #d4a13a;
+    --scanner-warn-bright: #f0c560;
+    --scanner-accent-bright: #ffb733;
+
+    /* Heat scale — 7-step diverging (red → neutral → green) */
+    --heat-red-3: #c4312f;
+    --heat-red-2: #9c2b29;
+    --heat-red-1: #5a2826;
+    --heat-neu:   #2a2f38;
+    --heat-grn-1: #1f4630;
+    --heat-grn-2: #2d7a4a;
+    --heat-grn-3: #3aa163;
 
     --font-mono: 'IBM Plex Mono', monospace;
   }
@@ -108,6 +122,133 @@
 ::-webkit-scrollbar-track { background: var(--scanner-bg1); }
 ::-webkit-scrollbar-thumb { background: var(--scanner-border2); border-radius: 0; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scanner-border3); }
+
+/* ═══ Item 1: Heat-scale classes ════════════════════════════════════════════ */
+/* Graduated 7-step diverging color scale for percentage values.
+   Replaces binary green/red with intensity-graded coloring. */
+
+.h-pos-3 { color: var(--scanner-green-bright); font-weight: 600; }
+.h-pos-2 { color: var(--scanner-green-bright); }
+.h-pos-1 { color: #79c990; }
+.h-neu   { color: var(--scanner-text2); }
+.h-neg-1 { color: #d97574; }
+.h-neg-2 { color: var(--scanner-red-bright); }
+.h-neg-3 { color: var(--scanner-red-bright); font-weight: 600; }
+
+/* Score coloring (7 tiers) */
+.s-90 { color: var(--scanner-green-bright); font-weight: 600; }
+.s-75 { color: var(--scanner-green-bright); }
+.s-60 { color: #79c990; }
+.s-45 { color: var(--scanner-text2); }
+.s-30 { color: #d97574; }
+.s-15 { color: var(--scanner-red-bright); }
+.s-00 { color: var(--scanner-red-bright); font-weight: 700; }
+
+/* ATR extension heat (4 tiers) */
+.atr-cool { color: var(--scanner-text2); }
+.atr-warm { color: var(--scanner-warn-bright); }
+.atr-hot  { color: var(--scanner-red-bright); font-weight: 600; }
+.atr-cold { color: var(--scanner-accent-bright); }
+
+/* Flag (NH20, NH52W) */
+.flag-on  { color: var(--scanner-green-bright); font-weight: 700; }
+.flag-off { color: var(--scanner-text3); }
+
+/* ═══ Item 7: Status + Tier badge classes ════════════════════════════════════ */
+.badge { display: inline-block; font-size: 9px; padding: 1px 5px;
+         border-radius: 2px; letter-spacing: 0.06em; font-weight: 700; }
+
+.status-DOMINANT      { background: rgba(0,230,118,0.18);  color: var(--scanner-green-bright); }
+.status-STRONG        { background: rgba(0,230,118,0.13);  color: var(--scanner-green-bright); }
+.status-EMERGING      { background: rgba(77,159,255,0.18); color: var(--scanner-blue); }
+.status-IMPROVING     { background: rgba(77,159,255,0.13); color: var(--scanner-blue); }
+.status-STRONG-HOT    { background: rgba(212,161,58,0.18); color: var(--scanner-warn-bright); }
+.status-NEUTRAL       { background: var(--scanner-bg3);     color: var(--scanner-text2); }
+.status-DETERIORATING { background: rgba(255,68,68,0.13);  color: var(--scanner-red-bright); }
+.status-FADING        { background: rgba(255,68,68,0.18);  color: var(--scanner-red-bright); }
+.status-WEAK          { background: rgba(255,68,68,0.18);  color: var(--scanner-red-bright); }
+
+.tier-Core   { background: rgba(77,159,255,0.18); color: var(--scanner-blue); }
+.tier-Active { background: var(--scanner-bg3);     color: var(--scanner-text2); }
+.tier-Watch  { background: var(--scanner-bg2);     color: var(--scanner-text3); }
+
+/* ═══ Item 8: Card-head gradient ═════════════════════════════════════════════ */
+.card-head-grad {
+  background: linear-gradient(180deg, var(--scanner-bg2) 0%, var(--scanner-bg1) 100%);
+  border-bottom: 1px solid var(--scanner-border2);
+}
+
+/* ═══ Items 2-4: Table utilities (sortable headers, copy/csv buttons) ════════ */
+.board-table thead th { cursor: pointer; user-select: none; transition: color 80ms; }
+.board-table thead th:hover { color: var(--scanner-text); }
+.board-table thead th.sort-desc::after { content: ' ▼'; font-size: 8px; color: var(--scanner-accent); }
+.board-table thead th.sort-asc::after  { content: ' ▲'; font-size: 8px; color: var(--scanner-accent); }
+
+.board-table tbody tr { transition: background 80ms; }
+.board-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+
+.copy-csv-btn {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  padding: 3px 8px; border-radius: 2px; cursor: pointer;
+  background: var(--scanner-bg3); color: var(--scanner-text3);
+  border: 1px solid var(--scanner-border2); transition: all 120ms;
+}
+.copy-csv-btn:hover { color: var(--scanner-text); border-color: var(--scanner-border3); }
+.copy-csv-btn.is-copied { background: rgba(0,230,118,0.15); color: var(--scanner-green); border-color: rgba(0,230,118,0.3); }
+.copy-csv-btn.is-error { background: rgba(255,68,68,0.15); color: var(--scanner-red); }
+
+/* ═══ Item 13: ADR window toggle ═════════════════════════════════════════════ */
+.adr-toggle {
+  display: inline-flex; border-radius: 2px; overflow: hidden;
+  border: 1px solid var(--scanner-border2);
+}
+.adr-toggle button {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  padding: 2px 8px; border: none; cursor: pointer; transition: all 120ms;
+  background: var(--scanner-bg2); color: var(--scanner-text3);
+}
+.adr-toggle button.active {
+  background: var(--scanner-accent); color: #0a0d14;
+}
+
+/* ═══ Item 9: Light theme ════════════════════════════════════════════════════ */
+html.light-mode {
+  --scanner-bg: #e8e8ec;
+  --scanner-bg1: #f0f0f4;
+  --scanner-bg2: #e0e0e6;
+  --scanner-bg3: #d4d4dc;
+  --scanner-border: #c8c8d0;
+  --scanner-border2: #b8b8c4;
+  --scanner-border3: #a0a0b0;
+  --scanner-text: #1a1a24;
+  --scanner-text2: #4a4a58;
+  --scanner-text3: #80808e;
+  --scanner-accent: #d48800;
+  --scanner-accent-bright: #e6a020;
+  --scanner-green: #00a050;
+  --scanner-green-bright: #00b060;
+  --scanner-red: #d03030;
+  --scanner-red-bright: #e04040;
+  --scanner-blue: #2070d0;
+  --scanner-warn: #b08020;
+  --scanner-warn-bright: #c09030;
+  --scanner-fast: #c0a000;
+  --scanner-slow: #b000b0;
+  --scanner-base: #00a0c0;
+
+  --heat-red-3: #d44040; --heat-red-2: #c03030; --heat-red-1: #a02828;
+  --heat-neu:   #c0c0c8;
+  --heat-grn-1: #2d8050; --heat-grn-2: #209040; --heat-grn-3: #00a050;
+}
+/* Keep NavBar dark in light mode (mirrors SMB's .topbar re-scope) */
+html.light-mode nav,
+html.light-mode .nav-bar {
+  --scanner-bg: #07070a; --scanner-bg1: #0c0c10; --scanner-bg2: #111118;
+  --scanner-text: #d0d0c4; --scanner-text2: #b0b0c4; --scanner-text3: #7a7a90;
+}
+html.light-mode .h-pos-1 { color: #2f8f57; }
+html.light-mode .h-neg-1 { color: #c05553; }
+html.light-mode .board-table tbody tr:hover { background: rgba(0,0,0,0.04); }
 /* ── TradingView chart panel — mobile responsiveness ──────────────────── */
 /* On mobile (below sm breakpoint = 640px), constrain the sheet to a
    bottom-oriented panel that doesn't fill the entire screen. The sheet.jsx
