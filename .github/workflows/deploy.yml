@@ -84,6 +84,7 @@ jobs:
       - name: Build FRED snapshot
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
         run: node scripts/build_snapshot.js
 
       # Fetch snapshot.tradfi.json from the gh-pages branch.
