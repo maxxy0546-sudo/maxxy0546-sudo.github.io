@@ -141,7 +141,7 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
   const handleCsv = useCallback(() => {
     const tbl = document.getElementById('scanner-results-table');
     if (!tbl) return;
-    const csv = tableToCsv(/** @type {HTMLTableElement} */ (tbl));
+    const csv = tableToCsv(tbl);
     const date = new Date().toISOString().slice(0, 10);
     downloadCsv(`scanner_results_${date}.csv`, csv);
     setCsvDone(true);

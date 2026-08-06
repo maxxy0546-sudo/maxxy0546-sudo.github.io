@@ -75,12 +75,12 @@ jobs:
     # The cron schedule runs 7 days a week (0-6). workflow_dispatch always runs.
     steps:
       - name: Checkout main
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0  # need full history for cross-branch push
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -223,7 +223,7 @@ jobs:
       - name: Trigger deploy
         if: steps.diff.outputs.changed == 'true'
         id: trigger
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // Dispatch the deploy workflow and record the time so we can
@@ -239,7 +239,7 @@ jobs:
 
       - name: Verify deploy workflow started
         if: steps.diff.outputs.changed == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // Poll the deploy workflow runs to confirm our dispatch actually
@@ -317,7 +317,7 @@ jobs:
       actions: read
     steps:
       - name: Find or open issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const label = 'ci-failure';

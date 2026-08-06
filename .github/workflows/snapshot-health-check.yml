@@ -112,7 +112,7 @@ jobs:
 
       - name: Open or update issue if stale
         if: steps.check.outputs.status == 'stale' || steps.check.outputs.status == 'critical' || steps.check.outputs.status == 'fetch_failed' || steps.check.outputs.status == 'no_timestamp'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const status = '${{ steps.check.outputs.status }}';
@@ -252,7 +252,7 @@ jobs:
 
       - name: Close stale issues if snapshot recovered
         if: steps.check.outputs.status == 'fresh'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // If the snapshot is fresh, auto-close any open stale-snapshot issues
