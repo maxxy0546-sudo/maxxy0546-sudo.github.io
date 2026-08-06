@@ -361,7 +361,7 @@ export default function MacroTab({ tradData, isLoading, snapshotLoading, onRefre
         </div>
 
         <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-          <table className="w-full border-collapse min-w-[1100px]">
+          <table id="tradfi-table" className="board-table w-full border-collapse min-w-[1100px]">
             <thead>
               <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
                 {['Ticker', 'Name', 'Price', '20D', '1D', '5D', '20D Ret', '60D', 'vs20MA', 'vs50MA', 'ATR', 'RSI', '52W%', 'RS/QQQ', 'Src', 'Cat'].map((h, hi) => (

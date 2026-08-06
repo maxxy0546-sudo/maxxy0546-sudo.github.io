@@ -88,7 +88,7 @@ export default function EtfPulseTab({ tradData, isLoading }) {
           Sector Rotation · 11 sector ETFs
         </SectionLabel>
         <div className="rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-          <table className="w-full border-collapse">
+          <table id="sector-rotation-table" className="board-table w-full border-collapse">
             <thead>
               <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
                 <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>Sector</th>

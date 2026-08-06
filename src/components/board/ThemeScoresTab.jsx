@@ -8,29 +8,18 @@
  *                NEUTRAL / DETERIORATING / FADING / WEAK
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { computeThemeScores, getExtensionLists, getRegimeRead } from '@/lib/board/tradfiScoring';
+import { useSortableTable } from '@/lib/board/useSortableTable';
+import CopyCsvButtons from './CopyCsvButtons';
+import { scoreClass as scoreCls, statusClass } from '@/lib/board/tableUtils';
 
 function fmtPct(v, decimals = 1) {
   if (v == null || !Number.isFinite(v)) return '—';
   return (v >= 0 ? '+' : '') + (v * 100).toFixed(decimals) + '%';
 }
 
-function scoreColor(score) {
-  if (score >= 75) return 'var(--scanner-green)';
-  if (score >= 60) return 'var(--scanner-text2)';
-  if (score <= 35) return 'var(--scanner-red)';
-  return 'var(--scanner-text3)';
-}
 
-function statusColor(status) {
-  if (status === 'DOMINANT' || status === 'STRONG') return 'var(--scanner-green)';
-  if (status === 'STRONG / HOT') return 'var(--scanner-accent)';
-  if (status === 'EMERGING' || status === 'IMPROVING') return 'var(--scanner-blue)';
-  if (status === 'FADING' || status === 'WEAK') return 'var(--scanner-red)';
-  if (status === 'DETERIORATING') return 'var(--scanner-accent)';
-  return 'var(--scanner-text3)';
-}
 
 function SectionLabel({ children, right = null }) {
   return (
@@ -44,11 +33,11 @@ function SectionLabel({ children, right = null }) {
 
 export default function ThemeScoresTab({ tradData, isLoading }) {
   const assets = tradData?.assets || [];
-  const [sortKey, setSortKey] = useState('score');
 
   const themeScores = useMemo(() => computeThemeScores(assets), [assets]);
   const extensions = useMemo(() => getExtensionLists(assets), [assets]);
   const regimeRead = useMemo(() => getRegimeRead(assets), [assets]);
+  const { sorted, sortCol, sortDir, handleSort, getSortClass } = useSortableTable(themeScores, 'score', 'desc');
 
   if (isLoading && !tradData) {
     return (
@@ -67,24 +56,7 @@ export default function ThemeScoresTab({ tradData, isLoading }) {
     );
   }
 
-  const sorted = [...themeScores].sort((a, b) => {
-    if (sortKey === 'score') return b.score - a.score;
-    if (sortKey === 'breadth') return b.breadth - a.breadth;
-    if (sortKey === 'momentum') return b.momentum - a.momentum;
-    if (sortKey === 'leadership') return b.leadership - a.leadership;
-    if (sortKey === 'delta') return (b.score1dDelta ?? -999) - (a.score1dDelta ?? -999);
-    if (sortKey === 'rs') return (b.avgRsQqq20d ?? -999) - (a.avgRsQqq20d ?? -999);
-    return 0;
-  });
 
-  const sortOptions = [
-    { key: 'score', label: 'Score' },
-    { key: 'delta', label: '1D Δ' },
-    { key: 'breadth', label: 'Breadth' },
-    { key: 'leadership', label: 'Leadership' },
-    { key: 'momentum', label: 'Momentum' },
-    { key: 'rs', label: 'RS QQQ' },
-  ];
 
   return (
     <div className="font-mono px-5 md:px-8 py-5">
@@ -119,40 +91,27 @@ export default function ThemeScoresTab({ tradData, isLoading }) {
 
       {/* Theme scores table */}
       <div className="mb-5">
-        <SectionLabel right={
-          <div className="flex gap-1">
-            {sortOptions.map(o => (
-              <button key={o.key} className="font-mono text-[9px] font-semibold px-2 py-1"
-                style={{
-                  background: sortKey === o.key ? 'rgba(245,158,11,0.12)' : 'var(--scanner-bg2)',
-                  border: `1px solid ${sortKey === o.key ? 'var(--scanner-accent)' : 'var(--scanner-border2)'}`,
-                  color: sortKey === o.key ? 'var(--scanner-accent)' : 'var(--scanner-text3)',
-                  cursor: 'pointer'
-                }}
-                onClick={() => setSortKey(o.key)}>{o.label}</button>
-            ))}
-          </div>
-        }>
+        <SectionLabel right={<CopyCsvButtons tableId="theme-scores-table" />}>
           Theme Scores · {themeScores.length} themes
         </SectionLabel>
         <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-          <table className="w-full border-collapse min-w-[900px]">
+          <table id="theme-scores-table" className="board-table w-full border-collapse min-w-[900px]">
             <thead>
               <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>#</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>Theme</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>N</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Score</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>1D Δ</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left ${getSortClass('rank')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('rank')}>#</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left ${getSortClass('theme')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('theme')}>Theme</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('nNames')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('nNames')}>N</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('score')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('score')}>Score</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('score1dDelta')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('score1dDelta')}>1D Δ</th>
                 <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>Status</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Breadth</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Lead</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Mom</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>%Above 20MA</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>%Above 50MA</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>5D %</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>20D %</th>
-                <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>RS QQQ</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('breadth')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('breadth')}>Breadth</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('leadership')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('leadership')}>Lead</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('momentum')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('momentum')}>Mom</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('pctAbove20ma')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('pctAbove20ma')}>%Above 20MA</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('pctAbove50ma')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('pctAbove50ma')}>%Above 50MA</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('avgRet5d')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('avgRet5d')}>5D %</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('avgRet20d')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('avgRet20d')}>20D %</th>
+                <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getSortClass('avgRsQqq20d')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleSort('avgRsQqq20d')}>RS QQQ</th>
               </tr>
             </thead>
             <tbody>
@@ -171,7 +130,7 @@ export default function ThemeScoresTab({ tradData, isLoading }) {
                     <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-text3)' }}>{t.nNames}</span>
                   </td>
                   <td className="py-2 px-2.5 text-right">
-                    <span className="text-[12px] font-bold tabular-nums" style={{ color: scoreColor(t.score) }}>{t.score.toFixed(0)}</span>
+                    <span className={`text-[12px] font-bold tabular-nums ${scoreCls(t.score)}`}>{t.score.toFixed(0)}</span>
                   </td>
                   <td className="py-2 px-2.5 text-right">
                     <span className="text-[10px] tabular-nums" style={{ color: t.score1dDelta > 0 ? 'var(--scanner-green)' : t.score1dDelta < 0 ? 'var(--scanner-red)' : 'var(--scanner-text3)' }}>
@@ -179,11 +138,7 @@ export default function ThemeScoresTab({ tradData, isLoading }) {
                     </span>
                   </td>
                   <td className="py-2 px-2.5">
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{
-                      background: `${statusColor(t.status)}15`,
-                      color: statusColor(t.status),
-                      border: `1px solid ${statusColor(t.status)}35`,
-                    }}>{t.status}</span>
+                    <span className={`badge ${statusClass(t.status)}`}>{t.status}</span>
                   </td>
                   <td className="py-2 px-2.5 text-right">
                     <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-text2)' }}>{t.breadth.toFixed(0)}</span>

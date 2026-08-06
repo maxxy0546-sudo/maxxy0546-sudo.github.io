@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import CopyCsvButtons from './CopyCsvButtons';
 
 const STATUS_PILL = {
   'DOMINANT':      { bg: 'rgba(0,230,118,0.12)',  text: 'var(--scanner-green)', border: 'rgba(0,230,118,0.3)' },
@@ -43,6 +44,7 @@ function ConstituentTable({ items }) {
             {['Ticker', 'Name', 'Subtheme', 'Price', '1D', '5D', '20D', 'RS 20D', 'vs50MA', 'ATR Ext', 'NH20', 'NH52', 'Tier'].map(h => (
               <th key={h} className="text-[8px] font-semibold tracking-[0.1em] uppercase py-2 px-3 text-left" style={{ color: 'var(--scanner-text3)' }}>{h}</th>
             ))}
+        <div className="ml-auto"><CopyCsvButtons tableId="themes-table" /></div>
           </tr>
         </thead>
         <tbody>
@@ -89,6 +91,7 @@ function ConstituentTable({ items }) {
               </td>
             </tr>
           ))}
+        <div className="ml-auto"><CopyCsvButtons tableId="themes-table" /></div>
         </tbody>
       </table>
     </div>
@@ -121,15 +124,17 @@ export default function ThemesTab({ themes, constituents }) {
             }}
             onClick={() => setSortKey(k)}>{l}</button>
         ))}
+        <div className="ml-auto"><CopyCsvButtons tableId="themes-table" /></div>
       </div>
 
       <div className="rounded overflow-hidden" style={{ border: '1px solid var(--scanner-border2)' }}>
-        <table className="w-full border-collapse min-w-[1000px]">
+        <table id="themes-table" className="board-table w-full border-collapse min-w-[1000px]">
           <thead>
             <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
               {['#', 'Theme', 'Score', 'Status', 'N', 'RS 20D', '% >20', '% >50', '% NH20', 'NH52W', '20D Ret', 'Δ'].map(h => (
                 <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left" style={{ color: 'var(--scanner-text3)' }}>{h}</th>
               ))}
+        <div className="ml-auto"><CopyCsvButtons tableId="themes-table" /></div>
             </tr>
           </thead>
           <tbody>

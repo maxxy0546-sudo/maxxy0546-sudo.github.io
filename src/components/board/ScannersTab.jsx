@@ -12,6 +12,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { getNewHighsLows, getRvolScan, getEtfExtension, getBreadthThrust } from '@/lib/board/tradfiScoring';
+import CopyCsvButtons from './CopyCsvButtons';
 
 function fmtPct(v, decimals = 2) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -136,11 +137,11 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
       {/* RVOL Scanner */}
       {subTab === 'rvol' && (
         <div>
-          <SectionLabel right={<span className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>{rvolScan.length} tickers with rVOL ≥ 1.5x</span>}>
+          <SectionLabel right={<div className="flex items-center gap-2"><span className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>{rvolScan.length} tickers</span><CopyCsvButtons tableId="rvol-table" /></div>}>
             Relative Volume Scanner · 1D vol / 20D avg
           </SectionLabel>
           <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-            <table className="w-full border-collapse min-w-[800px]">
+            <table id="rvol-table" className="board-table w-full border-collapse min-w-[800px]">
               <thead>
                 <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
                   <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>Ticker</th>
@@ -197,11 +198,11 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
       {/* ETF Extension */}
       {subTab === 'etfExtension' && (
         <div>
-          <SectionLabel right={<span className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>{etfExtension.length} ETFs</span>}>
+          <SectionLabel right={<div className="flex items-center gap-2"><span className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>{etfExtension.length} ETFs</span><CopyCsvButtons tableId="etf-extension-table" /></div>}>
             ETF Extension Rank · sorted by ATR ext from 50DMA
           </SectionLabel>
           <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-            <table className="w-full border-collapse min-w-[800px]">
+            <table id="rvol-table" className="board-table w-full border-collapse min-w-[800px]">
               <thead>
                 <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
                   <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>Ticker</th>

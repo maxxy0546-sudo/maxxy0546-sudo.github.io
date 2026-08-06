@@ -12,6 +12,7 @@
 
 import React, { useMemo } from 'react';
 import { LEVERED_ETFS, LEVERED_CATEGORY_ORDER } from '@/lib/board/leveredETFs';
+import CopyCsvButtons from './CopyCsvButtons';
 
 function fmtPct(v, decimals = 2) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -156,9 +157,11 @@ export default function LeveredETFTab({ tradData, isLoading }) {
         if (!rows || rows.length === 0) return null;
         return (
           <div key={cat} className="mb-5">
-            <SectionLabel>{cat} ({rows.length})</SectionLabel>
+            <SectionLabel right={<CopyCsvButtons tableId={`levered-${cat.replace(/\s/g, '-').toLowerCase()}-table`} />}>
+              {cat} ({rows.length})
+            </SectionLabel>
             <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-              <table className="w-full border-collapse min-w-[700px]">
+              <table id={`levered-${cat.replace(/\s/g, '-').toLowerCase()}-table`} className="board-table w-full border-collapse min-w-[700px]">
                 <thead>
                   <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
                     <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2 px-2.5 text-left" style={{ color: 'var(--scanner-text3)' }}>Ticker</th>

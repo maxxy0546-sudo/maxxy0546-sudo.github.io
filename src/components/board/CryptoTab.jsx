@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import TradingViewChart from '@/components/scanner/TradingViewChart';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import CopyCsvButtons from './CopyCsvButtons';
 
 function fmtPct(v) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -141,7 +142,7 @@ export default function CryptoTab({ cryptoAssets }) {
             placeholder="Search ticker or name…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="font-mono text-[10px] px-2 py-1 outline-none ml-auto"
+            className="font-mono text-[10px] px-2 py-1 outline-none"
             style={{
               background: 'var(--scanner-bg2)',
               border: '1px solid var(--scanner-border2)',
@@ -150,9 +151,10 @@ export default function CryptoTab({ cryptoAssets }) {
               width: '180px',
             }}
           />
+          <CopyCsvButtons tableId="crypto-tab-table" />
         </div>
         <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-          <table className="w-full border-collapse min-w-[1400px]">
+          <table id="crypto-tab-table" className="board-table w-full border-collapse min-w-[1400px]">
             <thead>
               <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
                 {headers.map((h, hi) => (
