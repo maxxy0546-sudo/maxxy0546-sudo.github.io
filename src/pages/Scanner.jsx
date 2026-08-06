@@ -67,18 +67,31 @@ export default function Scanner() {
   const [isScanning, setIsScanning] = useState(false);
   const [status, setStatus] = useState('idle');
   const [progress, setProgress] = useState({ done: 0, total: 0, matched: 0, message: '—' });
-  const [results, setResults] = useState(() => {
-    // Restore last scan results from sessionStorage so navigating away
-    // and back doesn't wipe the page.
+  // Results are stored per-mode so switching Crypto↔TradFi preserves each mode's results
+  const [cryptoResults, setCryptoResults] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('trendscan_scanner_results');
+      const saved = sessionStorage.getItem('trendscan_scanner_results_crypto');
       if (saved) return JSON.parse(saved);
     } catch {}
     return [];
   });
-  const [scanMeta, setScanMeta] = useState(() => {
+  const [tradfiResults, setTradfiResults] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('trendscan_scanner_meta');
+      const saved = sessionStorage.getItem('trendscan_scanner_results_tradfi');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+  const [cryptoMeta, setCryptoMeta] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('trendscan_scanner_meta_crypto');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { updatedAt: null, duration: null };
+  });
+  const [tradfiMeta, setTradfiMeta] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('trendscan_scanner_meta_tradfi');
       if (saved) return JSON.parse(saved);
     } catch {}
     return { updatedAt: null, duration: null };
@@ -88,25 +101,62 @@ export default function Scanner() {
   const [selectedRow, setSelectedRow] = useState(null);
   const throttleRef = useRef(null);
 
-  // Persist scan results to sessionStorage whenever they change
+  // Active results/meta are derived from the current mode
+  const isTradFiMode = settings.mode === 'tradfi';
+  const results = isTradFiMode ? tradfiResults : cryptoResults;
+  const scanMeta = isTradFiMode ? tradfiMeta : cryptoMeta;
+
+  // Refs to hold the current mode's setters so handleProgress (which has []
+  // deps for stable identity) can always write to the correct mode's state
+  const setResultsRef = useRef(setCryptoResults);
+  const setScanMetaRef = useRef(setCryptoMeta);
+  useEffect(() => {
+    if (isTradFiMode) {
+      setResultsRef.current = setTradfiResults;
+      setScanMetaRef.current = setTradfiMeta;
+    } else {
+      setResultsRef.current = setCryptoResults;
+      setScanMetaRef.current = setCryptoMeta;
+    }
+  }, [isTradFiMode, setTradfiResults, setCryptoResults, setTradfiMeta, setCryptoMeta]);
+
+  // Persist results to sessionStorage whenever they change
   useEffect(() => {
     try {
-      if (results.length > 0) {
-        sessionStorage.setItem('trendscan_scanner_results', JSON.stringify(results));
+      if (cryptoResults.length > 0) {
+        sessionStorage.setItem('trendscan_scanner_results_crypto', JSON.stringify(cryptoResults));
       } else {
-        sessionStorage.removeItem('trendscan_scanner_results');
+        sessionStorage.removeItem('trendscan_scanner_results_crypto');
       }
     } catch {}
-  }, [results]);
+  }, [cryptoResults]);
+
+  useEffect(() => {
+    try {
+      if (tradfiResults.length > 0) {
+        sessionStorage.setItem('trendscan_scanner_results_tradfi', JSON.stringify(tradfiResults));
+      } else {
+        sessionStorage.removeItem('trendscan_scanner_results_tradfi');
+      }
+    } catch {}
+  }, [tradfiResults]);
 
   // Persist scan metadata to sessionStorage
   useEffect(() => {
     try {
-      if (scanMeta.updatedAt) {
-        sessionStorage.setItem('trendscan_scanner_meta', JSON.stringify(scanMeta));
+      if (cryptoMeta.updatedAt) {
+        sessionStorage.setItem('trendscan_scanner_meta_crypto', JSON.stringify(cryptoMeta));
       }
     } catch {}
-  }, [scanMeta]);
+  }, [cryptoMeta]);
+
+  useEffect(() => {
+    try {
+      if (tradfiMeta.updatedAt) {
+        sessionStorage.setItem('trendscan_scanner_meta_tradfi', JSON.stringify(tradfiMeta));
+      }
+    } catch {}
+  }, [tradfiMeta]);
 
   // Massive API key check removed — 'auto' default uses free sources via the resolver.
   // Modal can still be triggered manually from ScannerControls if user wants Massive/Polygon.
@@ -121,25 +171,22 @@ export default function Scanner() {
     });
 
     // Handle completion FIRST — must not be skipped by the throttle below.
-    // If the complete event arrives within 200ms of the last progress update
-    // (common for fast scans), the throttle early-return would skip this block.
     if (p.phase === 'complete') {
       if (throttleRef.current) {
         clearTimeout(throttleRef.current);
         throttleRef.current = null;
       }
-      setResults(p.results);
-      setScanMeta({ updatedAt: p.updatedAt, duration: p.duration });
+      setResultsRef.current(p.results);
+      setScanMetaRef.current({ updatedAt: p.updatedAt, duration: p.duration });
       return;
     }
 
     if (p.results) {
-      // Throttle result updates to ~5fps
       if (throttleRef.current) return;
       throttleRef.current = setTimeout(() => {
         throttleRef.current = null;
       }, 200);
-      setResults([...p.results]);
+      setResultsRef.current([...p.results]);
     }
   }, []);
 
@@ -147,7 +194,7 @@ export default function Scanner() {
     if (isScanning) return;
     setIsScanning(true);
     setError(null);
-    setResults([]);
+    setResultsRef.current([]);  // clear only the active mode's results
     setProgress({ done: 0, total: 0, matched: 0, message: '—' });
 
     try {
@@ -165,16 +212,20 @@ export default function Scanner() {
   // Mode toggle: swap between crypto and tradfi. Also swaps the exchange/source
   // to a sensible default for the new mode so the user doesn't get stuck with
   // an invalid combination (e.g. 'hyperliquid' exchange in tradfi mode).
+  // Results are stored per-mode so switching preserves each mode's results.
+  // Switching is blocked while a scan is in progress to prevent freeze.
   const handleModeChange = useCallback((newMode) => {
+    if (isScanning) return;  // prevent mode switch during active scan
     setSettings(prev => {
+      if (prev.mode === newMode) return prev;  // no-op if same mode
       const newExchange = newMode === 'tradfi' ? 'auto' : 'okx_perps';
       return { ...prev, mode: newMode, exchange: newExchange };
     });
-    // Clear any previous scan results — they're for the wrong mode
-    setResults([]);
+    // Reset progress display but DON'T clear results — they're per-mode now
     setStatus('idle');
     setProgress({ done: 0, total: 0, matched: 0, message: '—' });
-  }, []);
+    setSelectedRow(null);
+  }, [isScanning]);
 
   // No auto-scan — wait for manual user trigger
 
