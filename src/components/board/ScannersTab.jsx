@@ -12,6 +12,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { getNewHighsLows, getRvolScan, getEtfExtension, getBreadthThrust } from '@/lib/board/tradfiScoring';
+import { sortRows } from '@/lib/board/tableUtils';
 import CopyCsvButtons from './CopyCsvButtons';
 
 function fmtPct(v, decimals = 2) {
@@ -58,10 +59,33 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
   const assets = tradData?.assets || [];
   const [subTab, setSubTab] = useState('newHighsLows');
 
+  // Sort state for RVOL table
+  const [rvolSortCol, setRvolSortCol] = useState('volRatio');
+  const [rvolSortDir, setRvolSortDir] = useState(/** @type {'desc' | 'asc'} */ ('desc'));
+  // Sort state for ETF Extension table
+  const [etfSortCol, setEtfSortCol] = useState('atrExt50ma');
+  const [etfSortDir, setEtfSortDir] = useState(/** @type {'desc' | 'asc'} */ ('desc'));
+
   const newHighsLows = useMemo(() => getNewHighsLows(assets), [assets]);
-  const rvolScan = useMemo(() => getRvolScan(assets, { minRatio: 1.5, topN: 30 }), [assets]);
-  const etfExtension = useMemo(() => getEtfExtension(assets), [assets]);
+  const rvolScanRaw = useMemo(() => getRvolScan(assets, { minRatio: 1.5, topN: 30 }), [assets]);
+  const etfExtensionRaw = useMemo(() => getEtfExtension(assets), [assets]);
   const breadthThrust = useMemo(() => getBreadthThrust(assets, breadthHistory || null), [assets, breadthHistory]);
+
+  // Sorted copies
+  const rvolScan = useMemo(() => sortRows(rvolScanRaw, a => a[rvolSortCol], rvolSortDir), [rvolScanRaw, rvolSortCol, rvolSortDir]);
+  const etfExtension = useMemo(() => sortRows(etfExtensionRaw, a => a[etfSortCol], etfSortDir), [etfExtensionRaw, etfSortCol, etfSortDir]);
+
+  const handleRvolSort = (col) => {
+    if (rvolSortCol === col) setRvolSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setRvolSortCol(col); setRvolSortDir('desc'); }
+  };
+  const getRvolSortClass = (col) => rvolSortCol === col ? (rvolSortDir === 'desc' ? 'sort-desc' : 'sort-asc') : '';
+
+  const handleEtfSort = (col) => {
+    if (etfSortCol === col) setEtfSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setEtfSortCol(col); setEtfSortDir('desc'); }
+  };
+  const getEtfSortClass = (col) => etfSortCol === col ? (etfSortDir === 'desc' ? 'sort-desc' : 'sort-asc') : '';
 
   if (isLoading && !tradData) {
     return (
@@ -144,13 +168,13 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
             <table id="rvol-table" className="board-table w-full border-collapse min-w-[800px]">
               <thead>
                 <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)', position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' }}>Ticker</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>rVOL</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Price</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>1D %</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>5D %</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>ATR Ext</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>% 52W High</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left ${getRvolSortClass('symbol')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer', position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)', width: '90px', maxWidth: '90px', whiteSpace: 'nowrap' }} onClick={() => handleRvolSort('symbol')}>Ticker</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getRvolSortClass('volRatio')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleRvolSort('volRatio')}>rVOL</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getRvolSortClass('price')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleRvolSort('price')}>Price</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getRvolSortClass('ret1d')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleRvolSort('ret1d')}>1D %</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getRvolSortClass('ret5d')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleRvolSort('ret5d')}>5D %</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getRvolSortClass('atrExt50ma')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleRvolSort('atrExt50ma')}>ATR Ext</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getRvolSortClass('pctFrom52wHigh')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleRvolSort('pctFrom52wHigh')}>% 52W High</th>
                 </tr>
               </thead>
               <tbody>
@@ -162,9 +186,8 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
                       style={{ borderBottom: '1px solid var(--scanner-border)' }}
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <td className="py-2 px-2.5" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
+                      <td className="py-2 px-2.5" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)', width: '90px', maxWidth: '90px', whiteSpace: 'nowrap' }}>
                         <span className="text-[11px] font-bold" style={{ color: 'var(--scanner-text)' }}>{a.symbol}</span>
-                        <span className="text-[9px] ml-1" style={{ color: 'var(--scanner-text3)' }}>{a.category}</span>
                       </td>
                       <td className="py-2 px-2.5 text-right">
                         <span className="text-[11px] font-bold tabular-nums" style={{ color: a.volRatio >= 3 ? 'var(--scanner-accent)' : a.volRatio >= 2 ? 'var(--scanner-green)' : 'var(--scanner-text2)' }}>
@@ -205,15 +228,15 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
             <table id="etf-extension-table" className="board-table w-full border-collapse min-w-[800px]">
               <thead>
                 <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left" style={{ color: 'var(--scanner-text3)', position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' }}>Ticker</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>ATR Ext</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Price</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>5D %</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>20D %</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>Dist 50MA</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>rVOL</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>% 52W High</th>
-                  <th className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right" style={{ color: 'var(--scanner-text3)' }}>ADR Used</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-left ${getEtfSortClass('symbol')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer', position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)', width: '90px', maxWidth: '90px', whiteSpace: 'nowrap' }} onClick={() => handleEtfSort('symbol')}>Ticker</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getEtfSortClass('atrExt50ma')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleEtfSort('atrExt50ma')}>ATR Ext</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getEtfSortClass('price')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleEtfSort('price')}>Price</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getEtfSortClass('ret5d')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleEtfSort('ret5d')}>5D %</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getEtfSortClass('ret20d')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleEtfSort('ret20d')}>20D %</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getEtfSortClass('distMa50')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleEtfSort('distMa50')}>Dist 50MA</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getEtfSortClass('volRatio')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleEtfSort('volRatio')}>rVOL</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getEtfSortClass('pctFrom52wHigh')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleEtfSort('pctFrom52wHigh')}>% 52W High</th>
+                  <th className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-2.5 text-right ${getEtfSortClass('adrUsedPct')}`} style={{ color: 'var(--scanner-text3)', cursor: 'pointer' }} onClick={() => handleEtfSort('adrUsedPct')}>ADR Used</th>
                 </tr>
               </thead>
               <tbody>
@@ -222,9 +245,8 @@ export default function ScannersTab({ tradData, isLoading, breadthHistory }) {
                     style={{ borderBottom: '1px solid var(--scanner-border)' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <td className="py-2 px-2.5" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>
+                    <td className="py-2 px-2.5" style={{ position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)', width: '90px', maxWidth: '90px', whiteSpace: 'nowrap' }}>
                       <span className="text-[11px] font-bold" style={{ color: 'var(--scanner-text)' }}>{a.symbol}</span>
-                      <span className="text-[9px] ml-1" style={{ color: 'var(--scanner-text3)' }}>{a.category}</span>
                     </td>
                     <td className="py-2 px-2.5 text-right">
                       <span className="text-[11px] font-bold tabular-nums" style={{ color: a.atrExt50ma >= 8 ? 'var(--scanner-accent)' : a.atrExt50ma >= 5 ? 'var(--scanner-green)' : a.atrExt50ma <= -5 ? 'var(--scanner-red)' : 'var(--scanner-text2)' }}>

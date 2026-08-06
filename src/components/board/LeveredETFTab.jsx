@@ -89,7 +89,7 @@ export default function LeveredETFTab({ tradData, isLoading }) {
 
   // Sort state — per-category sort (shared across categories for simplicity)
   const [sortCol, setSortCol] = useState('z1d');
-  const [sortDir, setSortDir] = useState('desc');
+  const [sortDir, setSortDir] = useState(/** @type {'desc' | 'asc'} */ ('desc'));
 
   const handleSort = (col) => {
     if (sortCol === col) {

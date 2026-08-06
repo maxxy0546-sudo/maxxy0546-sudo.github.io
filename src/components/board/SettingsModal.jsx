@@ -170,7 +170,7 @@ export default function SettingsModal({ onClose }) {
   );
 }
 
-function NumberInput({ label, value, onChange, step = 1, min, max, hint }) {
+function NumberInput({ label, value, onChange, step = 1, min, max, hint = null }) {
   return (
     <div>
       <div className="flex justify-between items-center mb-1">
