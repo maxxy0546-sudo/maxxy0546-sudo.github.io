@@ -39,7 +39,11 @@ export async function buildTradDataFromSnapshot() {
   const rawResults = [];
   for (const asset of TRAD_UNIVERSE) {
     const snapCandles = snapOHLCV[asset.symbol];
-    if (!snapCandles || snapCandles.length < 5) {
+    // Lowered from 5 → 1 to support newly-listed tickers (LYTE/NCLD/etc.)
+    // that may only have 1 day of Yahoo history. computeTradMetrics handles
+    // short histories gracefully (returns null for returns/ATR/RSI but still
+    // produces price + trivial MAs).
+    if (!snapCandles || snapCandles.length < 1) {
       rawResults.push({ asset, metrics: null, source: 'none' });
       continue;
     }
@@ -375,7 +379,10 @@ async function fetchTradfiCandles(symbol, limit = 300, snapCandles = null) {
   // ── Race all primary sources in parallel ────────────────────────────────
   // (Only reached if snapshot had no data for this ticker.)
 
-  if (snapCandles && snapCandles.length >= 5) {
+  // Lowered threshold from 5 → 1 to support newly-listed tickers (LYTE/NCLD
+  // ETFs that IPO'd today and only have 1 day of Yahoo history).
+  const MIN_CANDLES = 1;
+  if (snapCandles && snapCandles.length >= MIN_CANDLES) {
     return { candles: snapCandles, source: 'snapshot' };
   }
 
@@ -409,13 +416,13 @@ async function fetchTradfiCandles(symbol, limit = 300, snapCandles = null) {
   const isPrivate = PRIVATE_TICKERS.has(symbol.toUpperCase());
 
   if (isPrivate) {
-    if (lighterCandles && lighterCandles.length >= 5) return { candles: lighterCandles, source: 'lighter' };
-    if (okxCandles && okxCandles.length >= 5) return { candles: okxCandles, source: 'okx' };
-    if (yahooCandles && yahooCandles.length >= 5) return { candles: yahooCandles, source: 'yahoo' };
+    if (lighterCandles && lighterCandles.length >= MIN_CANDLES) return { candles: lighterCandles, source: 'lighter' };
+    if (okxCandles && okxCandles.length >= MIN_CANDLES) return { candles: okxCandles, source: 'okx' };
+    if (yahooCandles && yahooCandles.length >= MIN_CANDLES) return { candles: yahooCandles, source: 'yahoo' };
   } else {
-    if (yahooCandles && yahooCandles.length >= 5) return { candles: yahooCandles, source: 'yahoo' };
-    if (okxCandles && okxCandles.length >= 5) return { candles: okxCandles, source: 'okx' };
-    if (lighterCandles && lighterCandles.length >= 5) return { candles: lighterCandles, source: 'lighter' };
+    if (yahooCandles && yahooCandles.length >= MIN_CANDLES) return { candles: yahooCandles, source: 'yahoo' };
+    if (okxCandles && okxCandles.length >= MIN_CANDLES) return { candles: okxCandles, source: 'okx' };
+    if (lighterCandles && lighterCandles.length >= MIN_CANDLES) return { candles: lighterCandles, source: 'lighter' };
   }
 
   // ── Sequential fallback for rate-limited sources ────────────────────────
@@ -424,18 +431,18 @@ async function fetchTradfiCandles(symbol, limit = 300, snapCandles = null) {
 
   // Kraken (no rate limit, 11 tickers — rarely useful but free)
   let krakenCandles = await fetchKrakenTradCandles(symbol, limit);
-  if (krakenCandles && krakenCandles.length >= 5) return { candles: krakenCandles, source: 'kraken' };
+  if (krakenCandles && krakenCandles.length >= MIN_CANDLES) return { candles: krakenCandles, source: 'kraken' };
 
   // Massive/Polygon (rate limited ~5 req/min on free tier — has cooldown)
   if (Date.now() >= _massiveRateLimitedUntil) {
     let massiveCandles = await fetchMassiveTradCandles(symbol, limit);
-    if (massiveCandles && massiveCandles.length >= 5) return { candles: massiveCandles, source: 'massive' };
+    if (massiveCandles && massiveCandles.length >= MIN_CANDLES) return { candles: massiveCandles, source: 'massive' };
   }
 
   // Twelve Data (rate limited 8 req/min, 800/day — absolute last resort)
   if (_tdCreditsUsed < _tdCreditsLimit) {
     let tdCandles = await fetchTwelveDataCandles(symbol, limit);
-    if (tdCandles && tdCandles.length >= 5) return { candles: tdCandles, source: 'twelvedata' };
+    if (tdCandles && tdCandles.length >= MIN_CANDLES) return { candles: tdCandles, source: 'twelvedata' };
   }
 
   return null;
@@ -1007,7 +1014,9 @@ export const TRAD_UNIVERSE = [
   { symbol: 'TZA', name: '-3x Russell 2000', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
   { symbol: 'TWM', name: '-2x Russell 2000', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
   { symbol: 'SDOW', name: '-3x Dow 30', category: 'Levered', subtheme: 'Index Short', tier: 'Active', type: 'ETF' },
-  { symbol: 'SOXL', name: '3x Semiconductors', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
+  // Note: SOXL is already in the main universe (Semiconductors category) —
+  // do NOT re-list it here; duplicate universe entries cause duplicate rows
+  // in the All Assets table.
   { symbol: 'USD', name: '2x Semiconductors', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
   { symbol: 'TECL', name: '3x Technology', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
   { symbol: 'ROM', name: '2x Technology', category: 'Levered', subtheme: 'Sector Long', tier: 'Active', type: 'ETF' },
@@ -1063,7 +1072,9 @@ export const TRAD_UNIVERSE = [
   { symbol: 'SNDQ', name: '-2x SanDisk', category: 'Levered', subtheme: 'Single Stock Short', tier: 'Active', type: 'ETF' },
   { symbol: 'SARK', name: '-1x ARKK', category: 'Levered', subtheme: 'Single Stock Short', tier: 'Active', type: 'ETF' },
   { symbol: 'UVIX', name: '2x VIX Futures', category: 'Levered', subtheme: 'Volatility Long', tier: 'Active', type: 'ETF' },
-  { symbol: 'UVXY', name: '1.5x VIX Futures', category: 'Levered', subtheme: 'Volatility Long', tier: 'Active', type: 'ETF' },
+  // Note: UVXY is already in the main universe (Benchmark category) —
+  // do NOT re-list it here; duplicate universe entries cause duplicate rows
+  // in the All Assets table.
   { symbol: 'SVIX', name: '-1x VIX Futures', category: 'Levered', subtheme: 'Volatility Short', tier: 'Active', type: 'ETF' },
   { symbol: 'SVXY', name: '-0.5x VIX Futures', category: 'Levered', subtheme: 'Volatility Short', tier: 'Active', type: 'ETF' },
   { symbol: 'BITX', name: '2x Bitcoin', category: 'Levered', subtheme: 'Crypto Long', tier: 'Active', type: 'ETF' },
@@ -1116,7 +1127,12 @@ function computeRsi(closes, period = 14) {
 }
 
 function computeTradMetrics(candles) {
-  if (!candles || candles.length < 5) return null;
+  // Lowered from 5 → 1 to support newly-listed tickers (e.g. LYTE/NCLD ETFs
+  // that IPO'd today). With 1 candle, price + name + category will show but
+  // returns/MAs/ATR/RSI will be null or trivial — the asset still appears in
+  // the All Assets table so users know it's being tracked. As it accumulates
+  // history over the coming days/weeks, the metrics fill in naturally.
+  if (!candles || candles.length < 1) return null;
   const closes = candles.map(c => c.close);
   const highs   = candles.map(c => c.high);
   const lows    = candles.map(c => c.low);
@@ -1420,7 +1436,9 @@ export async function fetchTradMarketData(onProgress, onPartialResults, existing
       // This preserves all other assets' data while replacing this one.
       const idx = resultIndexBySymbol.get(asset.symbol);
       if (idx != null) {
-        if (!candles || candles.length < 5) {
+        // Lowered threshold from 5 → 1 to support newly-listed tickers.
+        // computeTradMetrics handles short histories gracefully.
+        if (!candles || candles.length < 1) {
           // Keep existing metrics if live fetch failed — don't overwrite with null
           if (rawResults[idx].metrics == null) {
             rawResults[idx] = { asset, metrics: null, source: 'none' };
@@ -1499,8 +1517,21 @@ function buildTradResult(rawResults, sourceTracker) {
   }).sort((a, b) => b.pctAbove50 - a.pctAbove50);
 
   // ── Individual assets enriched ─────────────────────────────────────────────
+  // Dedupe by symbol (defensive — TRAD_UNIVERSE is curated but has historically
+  // had accidental dupes when the same ticker appears in multiple sector
+  // baskets, e.g. SOXL in both Semiconductors and Levered sections). Without
+  // dedupe, each duplicate row in TRAD_UNIVERSE produces a duplicate row in
+  // the All Assets table on the TradFi tab. Keep the first occurrence (which
+  // is the more specific sector categorization, since the main universe is
+  // listed before the appended levered ETFs section).
+  const seenSymbols = new Set();
   const assets2 = rawResults
     .filter(r => r.metrics)
+    .filter(r => {
+      if (seenSymbols.has(r.asset.symbol)) return false;
+      seenSymbols.add(r.asset.symbol);
+      return true;
+    })
     .map(r => ({ ...r.asset, ...r.metrics, source: r.source }))
     .sort((a, b) => (b.ret20d ?? -99) - (a.ret20d ?? -99));
 

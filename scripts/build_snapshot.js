@@ -1023,7 +1023,15 @@ async function fetchTradfiSnapshot() {
     for (let j = 0; j < batch.length; j++) {
       const sym = batch[j];
       const r = results[j];
-      if (r.status === 'fulfilled' && r.value && r.value.length >= 30) {
+      // Lowered from 30 → 1 to support newly-listed tickers (e.g. LYTE/NCLD
+      // ETFs that IPO'd today). The client-side computeTradMetrics handles
+      // short histories gracefully — with 1 candle, price + name + category
+      // show but returns/MAs/ATR/RSI are null. The asset still appears in the
+      // All Assets table so users know it's being tracked. As it accumulates
+      // history over the coming days/weeks, the metrics fill in naturally.
+      // TRAD_UNIVERSE is curated, so even 1-candle fetches are legitimate
+      // (not Yahoo API errors returning junk — those would be 0 candles).
+      if (r.status === 'fulfilled' && r.value && r.value.length >= 1) {
         out[sym] = r.value;
         ok++;
       } else {
