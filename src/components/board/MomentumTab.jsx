@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { sortRows } from '@/lib/board/tableUtils';
+import CopyCsvButtons from './CopyCsvButtons';
 
 function fmtPct(v) {
   if (v == null) return '—';
@@ -10,38 +12,68 @@ function pctColor(v) {
   return v > 0 ? 'var(--scanner-green)' : v < 0 ? 'var(--scanner-red)' : 'var(--scanner-text2)';
 }
 
+const COLS = [
+  { key: 'symbol', label: 'Ticker', sortable: true, sticky: true },
+  { key: 'name', label: 'Name', sortable: false },
+  { key: 'theme', label: 'Theme', sortable: false },
+  { key: 'rs_btc_20d', label: 'RS 20D', sortable: true },
+  { key: 'ret5d', label: '5D Ret', sortable: true },
+  { key: 'ret20d', label: '20D Ret', sortable: true },
+  { key: 'ret60d', label: '60D Ret', sortable: true },
+  { key: 'atrExt50ma', label: 'ATR Ext', sortable: true },
+  { key: 'volRatio', label: 'Vol Ratio', sortable: true },
+  { key: 'distMa50', label: 'vs50MA', sortable: true },
+  { key: 'tier', label: 'Tier', sortable: true },
+  { key: null, label: '', sortable: false },
+];
+
 export default function MomentumTab({ cleanMomentum }) {
-  const [sortBy, setSortBy] = useState('ret20d');
+  const [sortCol, setSortCol] = useState('ret20d');
+  /** @type {[('desc'|'asc'), function]} */
+  const [sortDir, setSortDir] = useState('desc');
+
+  const handleSort = useCallback((key) => {
+    if (!key) return;
+    if (sortCol === key) {
+      setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSortCol(key);
+      setSortDir('desc');
+    }
+  }, [sortCol]);
+
+  const getSortClass = useCallback((key) => {
+    if (sortCol !== key) return '';
+    return sortDir === 'desc' ? 'sort-desc' : 'sort-asc';
+  }, [sortCol, sortDir]);
+
+  const sortedItems = useMemo(() => {
+    return sortRows(cleanMomentum || [], item => {
+      if (sortCol === 'rs_btc_20d') return item.rs_btc_20d;
+      return item[sortCol];
+    }, sortDir);
+  }, [cleanMomentum, sortCol, sortDir]);
 
   if (!cleanMomentum?.length) {
     return (
       <div className="font-mono text-center py-20 px-5">
         <div className="text-4xl mb-4 opacity-20">◈</div>
         <div className="text-sm" style={{ color: 'var(--scanner-text2)' }}>No assets currently meet clean momentum criteria</div>
-        <div className="text-[11px] mt-2" style={{ color: 'var(--scanner-text3)' }}>Requires: above 20+50MA · positive 5D · ATR ext 1–5 · vol ratio &gt;1</div>
+        <div className="text-[11px] mt-2" style={{ color: 'var(--scanner-text3)' }}>Requires: above 20+50MA · positive 5D · ATR ext 1–8 · vol ratio &gt;1</div>
       </div>
     );
   }
 
-  // Sort items based on selected criteria
-  const sortedItems = [...cleanMomentum].sort((a, b) => {
-    if (sortBy === 'rs_btc') return (b.rs_btc_20d ?? -999) - (a.rs_btc_20d ?? -999);
-    if (sortBy === 'ret20d') return (b.ret20d ?? -999) - (a.ret20d ?? -999);
-    if (sortBy === 'ret5d') return (b.ret5d ?? -999) - (a.ret5d ?? -999);
-    if (sortBy === 'vol') return (b.volRatio ?? 0) - (a.volRatio ?? 0);
-    return 0;
-  });
-
   return (
-    <div className="font-mono px-5 md:px-8 py-5">
+    <div className="font-mono px-5 md:px-8 py-5 mb-6">
       <div className="flex items-center gap-2 mb-4">
         <div className="w-1 h-3 rounded-full" style={{ background: 'var(--scanner-accent)' }} />
         <span className="text-[9px] font-bold tracking-[0.18em] uppercase" style={{ color: 'var(--scanner-text3)' }}>
           Clean Momentum — {cleanMomentum.length} assets
         </span>
+        <div className="ml-auto"><CopyCsvButtons tableId="clean-momentum-table" /></div>
       </div>
 
-      {/* Calculation criteria description */}
       <div className="mb-4 p-3 rounded text-[10px] leading-relaxed" style={{
         background: 'var(--scanner-bg2)',
         border: '1px solid var(--scanner-border2)',
@@ -51,43 +83,30 @@ export default function MomentumTab({ cleanMomentum }) {
         Price above <span style={{ color: 'var(--scanner-accent)' }}>20MA</span> and{' '}
         <span style={{ color: 'var(--scanner-accent)' }}>50MA</span> ·{' '}
         Positive <span style={{ color: 'var(--scanner-green)' }}>5D return</span> ·{' '}
-        ATR extension <span style={{ color: 'var(--scanner-accent)' }}>1.0–5.0</span> (not overextended) ·{' '}
+        ATR extension <span style={{ color: 'var(--scanner-accent)' }}>1.0–8.0</span> (not overextended) ·{' '}
         Volume ratio <span style={{ color: 'var(--scanner-accent)' }}>&gt;1.0</span> (above 20d avg) ·{' '}
         Ranked by <span style={{ color: 'var(--scanner-text2)' }}>relative strength vs BTC (20D)</span> ·{' '}
         Top 25 from Core/Active tier assets only.
-
-        {/* Sort controls */}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-[9px]" style={{ color: 'var(--scanner-text3)' }}>Sort:</span>
-          {[
-            { key: 'ret20d', label: '20D' },
-            { key: 'rs_btc', label: 'RS 20D' },
-            { key: 'ret5d', label: '5D' },
-            { key: 'vol', label: 'Vol' },
-          ].map(opt => (
-            <button
-              key={opt.key}
-              className="text-[9px] font-bold px-2 py-1 transition-all"
-              style={{
-                background: sortBy === opt.key ? 'rgba(245,158,11,0.12)' : 'transparent',
-                border: `1px solid ${sortBy === opt.key ? 'var(--scanner-accent)' : 'var(--scanner-border2)'}`,
-                color: sortBy === opt.key ? 'var(--scanner-accent)' : 'var(--scanner-text3)',
-                cursor: 'pointer',
-              }}
-              onClick={() => setSortBy(opt.key)}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <span className="ml-4" style={{ color: 'var(--scanner-text3)' }}>Click column headers to sort</span>
       </div>
 
       <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-        <table className="w-full border-collapse min-w-[900px]">
+        <table id="clean-momentum-table" className="board-table w-full border-collapse min-w-[900px]">
           <thead>
             <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-              {['Ticker', 'Name', 'Theme', 'RS 20D', '5D Ret', '20D Ret', '60D Ret', 'ATR Ext', 'Vol Ratio', 'vs50MA', 'Tier', ''].map((h, hi) => (
-                <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left" style={{ color: 'var(--scanner-text3)', ...(hi === 0 ? { position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' } : {}) }}>{h}</th>
+              {COLS.map((col, hi) => (
+                <th
+                  key={col.key || hi}
+                  className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left ${col.sortable ? getSortClass(col.key) : ''}`}
+                  style={{
+                    color: 'var(--scanner-text3)',
+                    cursor: col.sortable ? 'pointer' : 'default',
+                    ...(col.sticky ? { position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' } : {}),
+                  }}
+                  onClick={() => col.sortable && handleSort(col.key)}
+                >
+                  {col.label}
+                </th>
               ))}
             </tr>
           </thead>
@@ -126,20 +145,12 @@ export default function MomentumTab({ cleanMomentum }) {
                   </span>
                 </td>
                 <td className="py-3 px-3">
-                  <span className="text-[8px] px-1.5 py-0.5" style={{
-                    background: item.tier === 'Core' ? 'rgba(0,230,118,0.1)' : 'rgba(77,159,255,0.1)',
-                    color: item.tier === 'Core' ? 'var(--scanner-green)' : 'var(--scanner-blue)',
-                    border: item.tier === 'Core' ? '1px solid rgba(0,230,118,0.25)' : '1px solid rgba(77,159,255,0.25)',
-                  }}>
+                  <span className={`badge ${item.tier === 'Core' ? 'tier-Core' : item.tier === 'Active' ? 'tier-Active' : 'tier-Watch'}`}>
                     {item.tier}
                   </span>
                 </td>
                 <td className="py-3 px-3">
-                  <span className="text-[8px] px-1.5 py-0.5 font-bold" style={{
-                    background: 'rgba(0,230,118,0.08)',
-                    color: 'var(--scanner-green)',
-                    border: '1px solid rgba(0,230,118,0.2)'
-                  }}>CLEAN</span>
+                  <span className="badge" style={{ background: 'rgba(0,230,118,0.08)', color: 'var(--scanner-green)', border: '1px solid rgba(0,230,118,0.2)' }}>CLEAN</span>
                 </td>
               </tr>
             ))}

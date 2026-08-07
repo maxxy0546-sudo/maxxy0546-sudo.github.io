@@ -562,6 +562,7 @@ export const TRAD_UNIVERSE = [
   { symbol: 'TSM',      name: 'Taiwan Semiconductor',                   category: 'AI Infrastructure',            subtheme: 'Foundry',                  tier: 'Core',         type: 'Stock' },
   { symbol: 'CRWV',     name: 'CoreWeave',                              category: 'AI Infrastructure',            subtheme: 'GPU Cloud',                tier: 'Core',         type: 'Stock' },
   { symbol: 'NBIS',     name: 'Nebius Group',                           category: 'AI Infrastructure',            subtheme: 'GPU Cloud',                tier: 'Active',       type: 'Stock' },
+  { symbol: 'NCLD',     name: 'Roundhill Neocloud ETF',                  category: 'AI Infrastructure',            subtheme: 'Neocloud ETF',             tier: 'Active',       type: 'ETF' },
   // AI Applications
   { symbol: 'MSFT',     name: 'Microsoft',                              category: 'AI Applications',              subtheme: 'Cloud/AI',                 tier: 'Core',         type: 'Stock' },
   { symbol: 'GOOGL',    name: 'Alphabet',                               category: 'AI Applications',              subtheme: 'Search/AI',                tier: 'Core',         type: 'Stock' },
@@ -589,6 +590,7 @@ export const TRAD_UNIVERSE = [
   { symbol: 'AAOI',     name: 'Applied Optoelectronics',                category: 'Optics',                       subtheme: 'Optical Modules',          tier: 'Active',       type: 'Stock' },
   { symbol: 'GLW',      name: 'Corning',                                category: 'Optics',                       subtheme: 'Glass/Fiber Optics',       tier: 'Core',         type: 'Stock' },
   { symbol: 'LPTH',     name: 'Latham Technologies',                    category: 'Optics',                       subtheme: 'Photonics',                tier: 'Active',       type: 'Stock' },
+  { symbol: 'LYTE',     name: 'Roundhill Photonics & Optics ETF',         category: 'Optics',                       subtheme: 'Photonics ETF',            tier: 'Active',       type: 'ETF' },
   { symbol: 'POET',     name: 'POET Technologies',                      category: 'Optics',                       subtheme: 'Silicon Photonics',        tier: 'Active',       type: 'Stock' },
   // Cybersecurity
   { symbol: 'BB',       name: 'BlackBerry',                             category: 'Cybersecurity',                subtheme: 'Security/QNX',             tier: 'Active',       type: 'Stock' },

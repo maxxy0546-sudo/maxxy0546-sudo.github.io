@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { sortRows } from '@/lib/board/tableUtils';
+import CopyCsvButtons from './CopyCsvButtons';
 
 function fmtPct(v) {
   if (v == null) return '—';
@@ -10,24 +12,61 @@ function retColor(v) {
   return v > 0 ? 'var(--scanner-green)' : v < 0 ? 'var(--scanner-red)' : 'var(--scanner-text2)';
 }
 
-function SectionLabel({ children }) {
+function SectionLabel({ children, right = null }) {
   return (
     <div className="flex items-center gap-2 mb-3">
       <div className="w-1 h-3 rounded-full" style={{ background: 'var(--scanner-accent)' }} />
       <span className="text-[9px] font-bold tracking-[0.18em] uppercase" style={{ color: 'var(--scanner-text3)' }}>{children}</span>
+      {right && <div className="ml-auto">{right}</div>}
     </div>
   );
 }
+
+// Column definitions for sortability
+const COLUMNS = [
+  { key: 'rank', label: '#', sortable: true },
+  { key: 'symbol', label: 'Ticker', sortable: true },
+  { key: 'name', label: 'Name', sortable: false },
+  { key: 'subtheme', label: 'Subtheme', sortable: false },
+  { key: 'ret1d', label: '1D', sortable: true },
+  { key: '_abs', label: 'Abs', sortable: true },   // dynamic — bound at render time
+  { key: '_rel', label: 'Rel', sortable: true },   // dynamic — bound at render time
+  { key: 'distMa50', label: 'vs50MA', sortable: true },
+  { key: 'atrExt50ma', label: 'ATR Ext', sortable: true },
+  { key: 'volRatio', label: 'Vol Ratio', sortable: true },
+  { key: 'tier', label: 'Tier', sortable: true },
+];
 
 /**
  * @param {object} props
  * @param {Array} props.items
  * @param {string} props.absKey
  * @param {string} props.relKey
- * @param {string} [props.absLabel] Display label for absolute column
- * @param {string} [props.relLabel] Display label for relative column
  */
-function MomentumTable({ items, absKey, relKey, absLabel, relLabel }) {
+function MomentumTable({ items, absKey, relKey }) {
+  const [sortCol, setSortCol] = useState('_abs');
+  const [sortDir, setSortDir] = useState('desc');
+
+  const handleSort = useCallback((col) => {
+    const actualKey = col === '_abs' ? absKey : col === '_rel' ? relKey : col;
+    if (!actualKey) return;
+    if (sortCol === col) {
+      setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSortCol(col);
+      setSortDir('desc');
+    }
+  }, [absKey, relKey, sortCol]);
+
+  const getSortClass = useCallback((col) => {
+    return sortCol === col ? (sortDir === 'desc' ? 'sort-desc' : 'sort-asc') : '';
+  }, [sortCol, sortDir]);
+
+  const sorted = useMemo(() => {
+    const actualKey = sortCol === '_abs' ? absKey : sortCol === '_rel' ? relKey : sortCol;
+    return sortRows(items, item => item[actualKey], sortDir);
+  }, [items, sortCol, sortDir, absKey, relKey]);
+
   if (!items?.length) {
     return (
       <div className="text-center py-8 text-[11px]" style={{ color: 'var(--scanner-text3)', border: '1px solid var(--scanner-border2)' }}>
@@ -38,21 +77,33 @@ function MomentumTable({ items, absKey, relKey, absLabel, relLabel }) {
 
   return (
     <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-      <table className="w-full border-collapse min-w-[1000px]">
+      <table id="momentum-scan-table" className="board-table w-full border-collapse min-w-[1000px]">
         <thead>
           <tr style={{ background: 'var(--scanner-bg2)', borderBottom: '1px solid var(--scanner-border2)' }}>
-            {['#', 'Ticker', 'Name', 'Subtheme', '1D', absKey, relKey, 'vs50MA', 'ATR Ext', 'Vol Ratio', 'Tier'].map((h, hi) => (
-              <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left" style={{ color: 'var(--scanner-text3)', ...(hi === 1 ? { position: 'sticky', left: '32px', zIndex: 10, background: 'var(--scanner-bg2)' } : {}) }}>{h}</th>
+            {COLUMNS.map((col, hi) => (
+              <th
+                key={col.key}
+                className={`text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left ${col.sortable ? getSortClass(col.key) : ''}`}
+                style={{
+                  color: 'var(--scanner-text3)',
+                  cursor: col.sortable ? 'pointer' : 'default',
+                  ...(hi === 0 ? { position: 'sticky', left: 0, zIndex: 10, background: 'var(--scanner-bg2)' } : {}),
+                  ...(hi === 1 ? { position: 'sticky', left: '32px', zIndex: 10, background: 'var(--scanner-bg2)' } : {}),
+                }}
+                onClick={() => col.sortable && handleSort(col.key)}
+              >
+                {col.key === '_abs' ? `Abs` : col.key === '_rel' ? `Rel` : col.label}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {items.map((item, i) => (
+          {sorted.map((item, i) => (
             <tr key={item.symbol + i}
               style={{ borderBottom: '1px solid var(--scanner-border)' }}
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.025)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-              <td className="py-2.5 px-3 text-[10px]" style={{ color: 'var(--scanner-text3)' }}>{item.rank}</td>
+              <td className="py-2.5 px-3 text-[10px]" style={{ color: 'var(--scanner-text3)', position: 'sticky', left: 0, zIndex: 5, background: 'var(--scanner-bg1)' }}>{item.rank}</td>
               <td className="py-2.5 px-3" style={{ position: 'sticky', left: '32px', zIndex: 5, background: 'var(--scanner-bg1)' }}>
                 <span className="text-[12px] font-bold" style={{ color: 'var(--scanner-text)' }}>{item.symbol}</span>
               </td>
@@ -89,11 +140,7 @@ function MomentumTable({ items, absKey, relKey, absLabel, relLabel }) {
                 {item.volRatio != null ? item.volRatio.toFixed(2) + 'x' : '—'}
               </td>
               <td className="py-2.5 px-3">
-                <span className="text-[8px] px-1.5 py-0.5" style={{
-                  background: item.tier === 'Core' ? 'rgba(0,230,118,0.1)' : 'rgba(77,159,255,0.1)',
-                  color: item.tier === 'Core' ? 'var(--scanner-green)' : 'var(--scanner-blue)',
-                  border: item.tier === 'Core' ? '1px solid rgba(0,230,118,0.25)' : '1px solid rgba(77,159,255,0.25)',
-                }}>
+                <span className={`badge ${item.tier === 'Core' ? 'tier-Core' : item.tier === 'Active' ? 'tier-Active' : 'tier-Watch'}`}>
                   {item.tier}
                 </span>
               </td>
@@ -110,8 +157,6 @@ export default function MomentumScanTab({ momentumScan }) {
   const WINDOW_LABELS = { '1W': '1 Week', '1M': '1 Month', '3M': '3 Months', '6M': '6 Months' };
   const ABS_KEYS = { '1W': 'abs1w', '1M': 'abs1m', '3M': 'abs3m', '6M': 'abs6m' };
   const REL_KEYS = { '1W': 'rel1w', '1M': 'rel1m', '3M': 'rel3m', '6M': 'rel6m' };
-  const ABS_LABELS = { '1W': 'Abs 1W', '1M': 'Abs 1M', '3M': 'Abs 3M', '6M': 'Abs 6M' };
-  const REL_LABELS = { '1W': 'Rel 1W', '1M': 'Rel 1M', '3M': 'Rel 3M', '6M': 'Rel 6M' };
 
   const [activeWindow, setActiveWindow] = useState('1W');
   const items = momentumScan?.[activeWindow] ?? [];
@@ -134,8 +179,11 @@ export default function MomentumScanTab({ momentumScan }) {
           </button>
         ))}
         <span className="text-[9px] ml-4" style={{ color: 'var(--scanner-text3)' }}>
-          {items.length} assets · sorted by {ABS_LABELS[activeWindow]}
+          {items.length} assets
         </span>
+        <div className="ml-auto">
+          <CopyCsvButtons tableId="momentum-scan-table" />
+        </div>
       </div>
 
       {/* Description */}
@@ -144,8 +192,7 @@ export default function MomentumScanTab({ momentumScan }) {
           {WINDOW_LABELS[activeWindow]} Absolute Momentum
         </div>
         <div className="text-[9px]" style={{ color: 'var(--scanner-text3)' }}>
-          Assets ranked by drawdown from {WINDOW_LABELS[activeWindow]} low — measures pure momentum vs recent lows.
-          Relative column shows performance vs 20-day moving average.
+          Click column headers to sort. Assets ranked by drawdown from {WINDOW_LABELS[activeWindow]} low — measures pure momentum vs recent lows.
         </div>
       </div>
 
@@ -154,8 +201,6 @@ export default function MomentumScanTab({ momentumScan }) {
         items={items}
         absKey={ABS_KEYS[activeWindow]}
         relKey={REL_KEYS[activeWindow]}
-        absLabel={ABS_LABELS[activeWindow]}
-        relLabel={REL_LABELS[activeWindow]}
       />
     </div>
   );
