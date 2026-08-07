@@ -45,7 +45,7 @@ const COLUMNS = [
  */
 function MomentumTable({ items, absKey, relKey }) {
   const [sortCol, setSortCol] = useState('_abs');
-  const [sortDir, setSortDir] = useState('desc');
+  const [sortDir, setSortDir] = useState(/** @type {'desc' | 'asc'} */ ('desc'));
 
   const handleSort = useCallback((col) => {
     const actualKey = col === '_abs' ? absKey : col === '_rel' ? relKey : col;

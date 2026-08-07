@@ -38,7 +38,7 @@ function SectionLabel({ children, count, right = null }) {
 
 function SortableAssetTable({ items, columns, tableId }) {
   const [sortCol, setSortCol] = useState(null);
-  const [sortDir, setSortDir] = useState('desc');
+  const [sortDir, setSortDir] = useState(/** @type {'desc' | 'asc'} */ ('desc'));
 
   const handleSort = useCallback((key) => {
     if (!key) return;

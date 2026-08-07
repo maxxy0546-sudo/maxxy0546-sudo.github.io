@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import MomentumTab from './MomentumTab';
+import ExtensionTab from './ExtensionTab';
 
 function fmtPct(v) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -84,7 +86,7 @@ function rsiColor(v) {
   return 'var(--scanner-text2)';
 }
 
-export default function MacroTab({ tradData, isLoading, snapshotLoading, onRefresh }) {
+export default function MacroTab({ tradData, isLoading, snapshotLoading, onRefresh, cleanMomentum = [], tooHot = [], fading = [] }) {
   const [sortKey, setSortKey] = useState('ret20d');
   const [filterCat, setFilterCat] = useState('All');
   const [search, setSearch] = useState('');
@@ -325,6 +327,10 @@ export default function MacroTab({ tradData, isLoading, snapshotLoading, onRefre
           </table>
         </section>
       )}
+
+      {/* Clean Momentum + Extension lists (moved from old Momentum tab) */}
+      <MomentumTab cleanMomentum={cleanMomentum} />
+      <ExtensionTab tooHot={tooHot} fading={fading} />
 
       {/* Individual asset table */}
       <section>
