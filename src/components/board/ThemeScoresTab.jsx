@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { computeThemeScores, getExtensionLists, getRegimeRead } from '@/lib/board/tradfiScoring';
+import { computeThemeScores, getRegimeRead } from '@/lib/board/tradfiScoring';
 import { useSortableTable } from '@/lib/board/useSortableTable';
 import CopyCsvButtons from './CopyCsvButtons';
 import { scoreClass as scoreCls, statusClass } from '@/lib/board/tableUtils';
@@ -35,7 +35,6 @@ export default function ThemeScoresTab({ tradData, isLoading }) {
   const assets = tradData?.assets || [];
 
   const themeScores = useMemo(() => computeThemeScores(assets), [assets]);
-  const extensions = useMemo(() => getExtensionLists(assets), [assets]);
   const regimeRead = useMemo(() => getRegimeRead(assets), [assets]);
   const { sorted, sortCol, sortDir, handleSort, getSortClass } = useSortableTable(themeScores, 'score', 'desc');
 
@@ -168,78 +167,6 @@ export default function ThemeScoresTab({ tradData, isLoading }) {
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* Extension lists */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Too Hot */}
-        <div>
-          <SectionLabel>Too Hot · ≥{extensions.thresholds.tooHotAtr} ATR above 50MA</SectionLabel>
-          <div className="rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-            {extensions.tooHot.length === 0 ? (
-              <div className="p-3 text-[10px]" style={{ color: 'var(--scanner-text3)' }}>None — market not overextended.</div>
-            ) : (
-              extensions.tooHot.map(a => (
-                <div key={a.symbol} className="flex justify-between items-center px-3 py-1.5" style={{ borderBottom: '1px solid var(--scanner-border)' }}>
-                  <div>
-                    <span className="text-[10px] font-bold" style={{ color: 'var(--scanner-text)' }}>{a.symbol}</span>
-                    <span className="text-[9px] ml-1" style={{ color: 'var(--scanner-text3)' }}>{a.category}</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-accent)' }}>{a.atrExt50ma?.toFixed(1)}σ</span>
-                    <span className="text-[10px] tabular-nums" style={{ color: a.ret1d > 0 ? 'var(--scanner-green)' : 'var(--scanner-red)' }}>{fmtPct(a.ret1d)}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Clean Momentum */}
-        <div>
-          <SectionLabel>Clean Momentum · ATR [{extensions.thresholds.cleanAtrMin}, {extensions.thresholds.cleanAtrMax}]</SectionLabel>
-          <div className="rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-            {extensions.cleanMomentum.length === 0 ? (
-              <div className="p-3 text-[10px]" style={{ color: 'var(--scanner-text3)' }}>None — no clean momentum setups.</div>
-            ) : (
-              extensions.cleanMomentum.map(a => (
-                <div key={a.symbol} className="flex justify-between items-center px-3 py-1.5" style={{ borderBottom: '1px solid var(--scanner-border)' }}>
-                  <div>
-                    <span className="text-[10px] font-bold" style={{ color: 'var(--scanner-text)' }}>{a.symbol}</span>
-                    <span className="text-[9px] ml-1" style={{ color: 'var(--scanner-text3)' }}>{a.category}</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="text-[10px] tabular-nums" style={{ color: a.rsQqq20d > 0 ? 'var(--scanner-green)' : 'var(--scanner-text3)' }}>RS {fmtPct(a.rsQqq20d)}</span>
-                    <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-green)' }}>{fmtPct(a.ret5d)}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Fading */}
-        <div>
-          <SectionLabel>Fading · lost 20MA, 5D {'<'} -3%</SectionLabel>
-          <div className="rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
-            {extensions.fading.length === 0 ? (
-              <div className="p-3 text-[10px]" style={{ color: 'var(--scanner-text3)' }}>None — no broad fading.</div>
-            ) : (
-              extensions.fading.map(a => (
-                <div key={a.symbol} className="flex justify-between items-center px-3 py-1.5" style={{ borderBottom: '1px solid var(--scanner-border)' }}>
-                  <div>
-                    <span className="text-[10px] font-bold" style={{ color: 'var(--scanner-text)' }}>{a.symbol}</span>
-                    <span className="text-[9px] ml-1" style={{ color: 'var(--scanner-text3)' }}>{a.category}</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-red)' }}>{fmtPct(a.ret5d)}</span>
-                    <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-text3)' }}>{a.distMa50?.toFixed(1)}%</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
         </div>
       </div>
     </div>

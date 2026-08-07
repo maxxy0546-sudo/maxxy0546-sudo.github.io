@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import MomentumTab from './MomentumTab';
-import ExtensionTab from './ExtensionTab';
+import { getExtensionLists } from '@/lib/board/tradfiScoring';
 
 function fmtPct(v) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -86,7 +85,7 @@ function rsiColor(v) {
   return 'var(--scanner-text2)';
 }
 
-export default function MacroTab({ tradData, isLoading, snapshotLoading, onRefresh, cleanMomentum = [], tooHot = [], fading = [] }) {
+export default function MacroTab({ tradData, isLoading, snapshotLoading, onRefresh }) {
   const [sortKey, setSortKey] = useState('ret20d');
   const [filterCat, setFilterCat] = useState('All');
   const [search, setSearch] = useState('');
@@ -106,6 +105,11 @@ export default function MacroTab({ tradData, isLoading, snapshotLoading, onRefre
       return true;
     });
   }, [assets, filterCat, search]);
+
+  // TradFi-specific extension lists (Too Hot / Clean Momentum / Fading).
+  // Computed locally from tradData.assets via tradfiScoring.getExtensionLists.
+  // (The crypto versions of these tables live on the Crypto Momentum tab.)
+  const extensions = useMemo(() => getExtensionLists(assets), [assets]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -328,9 +332,85 @@ export default function MacroTab({ tradData, isLoading, snapshotLoading, onRefre
         </section>
       )}
 
-      {/* Clean Momentum + Extension lists (moved from old Momentum tab) */}
-      <MomentumTab cleanMomentum={cleanMomentum} />
-      <ExtensionTab tooHot={tooHot} fading={fading} />
+      {/* TradFi extension lists — Too Hot / Clean Momentum / Fading.
+          These are TradFi-specific (computed from tradData.assets via
+          tradfiScoring.getExtensionLists). The crypto equivalents live on
+          the Crypto Momentum tab. */}
+      <section>
+        <div className="text-[11px] font-bold tracking-wide uppercase mb-2" style={{ color: 'var(--scanner-text2)' }}>
+          TradFi Extension Lists
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Too Hot */}
+          <div>
+            <SectionLabel>Too Hot · ≥{extensions.thresholds.tooHotAtr} ATR above 50MA</SectionLabel>
+            <div className="rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
+              {extensions.tooHot.length === 0 ? (
+                <div className="p-3 text-[10px]" style={{ color: 'var(--scanner-text3)' }}>None — market not overextended.</div>
+              ) : (
+                extensions.tooHot.map(a => (
+                  <div key={a.symbol} className="flex justify-between items-center px-3 py-1.5" style={{ borderBottom: '1px solid var(--scanner-border)' }}>
+                    <div>
+                      <span className="text-[10px] font-bold" style={{ color: 'var(--scanner-text)' }}>{a.symbol}</span>
+                      <span className="text-[9px] ml-1" style={{ color: 'var(--scanner-text3)' }}>{a.category}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-accent)' }}>{a.atrExt50ma?.toFixed(1)}σ</span>
+                      <span className="text-[10px] tabular-nums" style={{ color: a.ret1d > 0 ? 'var(--scanner-green)' : 'var(--scanner-red)' }}>{fmtPct(a.ret1d)}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Clean Momentum */}
+          <div>
+            <SectionLabel>Clean Momentum · ATR [{extensions.thresholds.cleanAtrMin}, {extensions.thresholds.cleanAtrMax}]</SectionLabel>
+            <div className="rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
+              {extensions.cleanMomentum.length === 0 ? (
+                <div className="p-3 text-[10px]" style={{ color: 'var(--scanner-text3)' }}>None — no clean momentum setups.</div>
+              ) : (
+                extensions.cleanMomentum.map(a => (
+                  <div key={a.symbol} className="flex justify-between items-center px-3 py-1.5" style={{ borderBottom: '1px solid var(--scanner-border)' }}>
+                    <div>
+                      <span className="text-[10px] font-bold" style={{ color: 'var(--scanner-text)' }}>{a.symbol}</span>
+                      <span className="text-[9px] ml-1" style={{ color: 'var(--scanner-text3)' }}>{a.category}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-[10px] tabular-nums" style={{ color: a.rsQqq20d > 0 ? 'var(--scanner-green)' : 'var(--scanner-text3)' }}>RS {fmtPct(a.rsQqq20d)}</span>
+                      <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-green)' }}>{fmtPct(a.ret5d)}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Fading */}
+          <div>
+            <SectionLabel>Fading · lost 20MA, 5D {'<'} -3%</SectionLabel>
+            <div className="rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
+              {extensions.fading.length === 0 ? (
+                <div className="p-3 text-[10px]" style={{ color: 'var(--scanner-text3)' }}>None — no broad fading.</div>
+              ) : (
+                extensions.fading.map(a => (
+                  <div key={a.symbol} className="flex justify-between items-center px-3 py-1.5" style={{ borderBottom: '1px solid var(--scanner-border)' }}>
+                    <div>
+                      <span className="text-[10px] font-bold" style={{ color: 'var(--scanner-text)' }}>{a.symbol}</span>
+                      <span className="text-[9px] ml-1" style={{ color: 'var(--scanner-text3)' }}>{a.category}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-red)' }}>{fmtPct(a.ret5d)}</span>
+                      <span className="text-[10px] tabular-nums" style={{ color: 'var(--scanner-text3)' }}>{a.distMa50?.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Individual asset table */}
       <section>

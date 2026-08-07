@@ -4,6 +4,8 @@ import DailyBoard from '@/components/board/DailyBoard';
 import CryptoTab from '@/components/board/CryptoTab';
 import ThemesTab from '@/components/board/ThemesTab';
 import BreadthTab from '@/components/board/BreadthTab';
+import ExtensionTab from '@/components/board/ExtensionTab';
+import MomentumTab from '@/components/board/MomentumTab';
 import MomentumScanTab from '@/components/board/MomentumScanTab';
 import MacroTab from '@/components/board/MacroTab';
 import LeveredETFTab from '@/components/board/LeveredETFTab';
@@ -564,7 +566,13 @@ export default function Board() {
           {activeTab === 1 && (
             <CryptoTab cryptoAssets={data?.cryptoAssets} />
           )}
-          {activeTab === 2 && <MomentumScanTab momentumScan={momentumScan} />}
+          {activeTab === 2 && (
+            <>
+              <MomentumScanTab momentumScan={momentumScan} />
+              <MomentumTab cleanMomentum={cleanMomentum} />
+              <ExtensionTab tooHot={tooHot} fading={fading} />
+            </>
+          )}
           {activeTab === 3 && <ThemesTab themes={themes} constituents={constituents} />}
           {activeTab === 4 && <BreadthTab breadthSeries={breadthSeries} />}
           {activeTab === 5 && <FactorMonitor />}
@@ -576,9 +584,6 @@ export default function Board() {
               isLoading={tradLoading}
               snapshotLoading={tradSnapshotLoading}
               onRefresh={runTradAnalysis}
-              cleanMomentum={cleanMomentum}
-              tooHot={tooHot}
-              fading={fading}
             />
           )}
           {activeTab === 7 && <ThemeScoresTab tradData={tradData} isLoading={tradLoading} />}
