@@ -26,7 +26,7 @@ export const STABLECOINS = new Set([
 ]);
 
 export const WRAPPED = new Set([
-  'WBTC','WETH','WBNB','WSOL','STETH','WSTETH','CBETH','RETH',
+  'WBTC','WETH','WBNB','WSOL','STETH','WSTETH','CBETH','WBETH','RETH',
   'FRXETH','SFRXETH','WEETH','EZETH','RSETH','PXETH','WMATIC',
   'WAVAX','WFTM','WONE','WKLAY','WROSE',
   // Wrapped/staked BTC variants
@@ -38,3 +38,35 @@ export const WRAPPED = new Set([
   // Other tokenized/wrapped assets that shouldn't appear in scanner
   'FIDD',
 ]);
+
+// CMC tag slugs that mark non-tradeable-as-crypto assets: tokenized equities
+// and Binance xStocks. These slip into CMC's top-500 when
+// "cryptocurrency_type=all" is used (e.g. NVDAON, NVDAX, TSLAX, SPYX, etc.)
+// and should be filtered out of the crypto Screener universe — they're not
+// crypto, they're tokenized TradFi.
+//
+// NOTE: NOT included (intentionally):
+//   - `tokenized-assets` (too broad — also catches XAUT/PAXG tokenized gold,
+//     which are popular crypto-adjacent tradeable assets)
+//   - `tokenized-commodities` (XAUT, PAXG, XAUM — gold tokens, tradeable)
+//   - `synthetics` / `synthetic-protocols` (these are PROTOCOL tags, not
+//     asset tags — they filter out SNX/Synthetix which is a legit DeFi token)
+export const TOKENIZED_TAGS = new Set([
+  'tokenized-stock',       // NVDAON, TSLAX, MSTRX, MUON, CRCLX, etc.
+  'tokenized-etfs',        // SPYX, IVVON, SPYON, IBITON
+  'xstocks-ecosystem',     // Binance xStocks (NVDAX, TSLAX, AAPLX, etc.)
+  'bstocks',               // Backed stocks (bNVDA, bTSLA, MUB, SNDKB, etc.)
+]);
+
+// Name keywords that mark non-crypto / wrapped / tokenized assets. Used as a
+// heuristic for live fallback sources (CoinCap, Binance 24hr ticker) that
+// don't supply CMC tags. Matches case-insensitively against the asset name.
+export const NON_CRYPTO_NAME_KEYWORDS = [
+  'tokenized stock',
+  'tokenized equity',
+  'xstock',           // e.g. "NVIDIA xStock"
+  'wrapped beacon',   // WBETH (Wrapped Beacon ETH)
+  'wrapped eth',      // catch-all for future W-eth variants
+  'synthetic',        // e.g. "Synthetic NVIDIA"
+  'backed stock',     // e.g. "Backed NVIDIA Stock"
+];

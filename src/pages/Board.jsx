@@ -18,7 +18,7 @@ import QuickViewBar from '@/components/board/QuickViewBar';
 import BoardToolbar from '@/components/board/BoardToolbar';
 import FreshnessBanner from '@/components/FreshnessBanner';
 import { runBoardAnalysis } from '@/lib/board/boardEngine';
-import { fetchTradMarketData, buildTradDataFromSnapshot } from '@/lib/board/traditionalMarkets';
+import { fetchTradMarketData, buildTradDataFromSnapshot, rebuildTradDataFromFreshSnapshot } from '@/lib/board/traditionalMarkets';
 import { fetchAllTickers as fetchHyperliquidTickers } from '@/lib/scanner/sources/hyperliquid';
 import { getGloballyBlockedSources } from '@/lib/scanner/sourceResolver';
 
@@ -299,6 +299,23 @@ export default function Board() {
   const runTradAnalysis = useCallback(async () => {
     setTradLoading(true);
     try {
+      // Refresh the tradfi snapshot in the background (non-blocking) so the
+      // next loadSnapshotTradfi() call picks up the latest data. We don't
+      // await this — the live fetch below will use the existing cached
+      // snapshot to seed rawResults, and any newly-fetched snapshot data
+      // will be picked up on the next refresh cycle.
+      rebuildTradDataFromFreshSnapshot().then(freshSnapData => {
+        if (freshSnapData) {
+          setTradData(prev => {
+            // Only update if we're still in 'snapshot' mode (live fetch hasn't
+            // started updating yet). Once live data starts flowing, we don't
+            // want to clobber it with a fresh snapshot.
+            if (tradDataSource === 'snapshot') return freshSnapData;
+            return prev;
+          });
+        }
+      }).catch(() => {});
+
       // Pass existing tradData (snapshot or previous live) so the fetcher
       // can seed rawResults with it — assets not yet refreshed retain
       // their existing metrics instead of disappearing.
@@ -319,6 +336,28 @@ export default function Board() {
     } finally {
       setTradLoading(false);
     }
+  }, [tradDataSource]);
+
+  /**
+   * Re-fetch /snapshot.json (cache-busting) so the Board header's signal
+   * metrics, macro quadrant, freshness banner, and global metrics reflect
+   * the latest server-side data. Returns the fresh snapshot or null.
+   *
+   * The 4× daily refresh deploys new snapshots every 6 hours, but the browser
+   * HTTP cache (and our in-memory tradfi cache) would otherwise hold stale
+   * data indefinitely. This function busts both caches.
+   */
+  const refreshSnapshotData = useCallback(async () => {
+    try {
+      const res = await fetch(`/snapshot.json?t=${Date.now()}`);
+      if (!res.ok) return null;
+      const freshSnap = await res.json();
+      setSnapshotData(freshSnap);
+      return freshSnap;
+    } catch (e) {
+      console.warn('Snapshot re-fetch failed:', e.message);
+      return null;
+    }
   }, []);
 
   // Auto-refresh: when the user first visits any TradFi tab (indices 2-6:
@@ -335,8 +374,20 @@ export default function Board() {
     if (isLoading) return;
     setIsLoading(true);
     setError(null);
-    setProgress({ phase: 'loading', message: 'Starting…', done: undefined, total: undefined });
+    setProgress({ phase: 'loading', message: 'Refreshing snapshot + live data…', done: undefined, total: undefined });
     try {
+      // ── Re-fetch /snapshot.json FIRST (cache-busting) ────────────────────
+      // The 4× daily refresh deploys new snapshots every 6 hours, but the
+      // browser HTTP cache holds stale data indefinitely. Without this re-fetch,
+      // users would have to manually hard-reload the page to pick up a fresh
+      // snapshot — which defeats the purpose of the Refresh button.
+      //
+      // We do NOT await this for the live candle fetch (runBoardAnalysis below)
+      // because the live fetch uses exchange APIs (Binance/OKX/etc.), not the
+      // snapshot. But we DO want the snapshot data (signal_metrics, regime_history,
+      // global_metrics, macro quadrant) to be fresh before we re-render.
+      refreshSnapshotData();
+
       // Pass existing data (from sessionStorage or previous refresh) so the
       // engine can seed rawResults — assets not yet refreshed retain their
       // previous metrics instead of disappearing during the refresh.
@@ -365,7 +416,9 @@ export default function Board() {
 
       const result = await runBoardAnalysis(exch, handleProgress, data, snapMcaps);
       setData(result);
-      // Kick off tradfi fetch in the background — don't await it
+      // Kick off tradfi fetch in the background — don't await it.
+      // runTradAnalysis also re-fetches /snapshot.tradfi.json (cache-busting)
+      // so the TradFi tab picks up fresh OHLCV data too.
       runTradAnalysis();
     } catch (err) {
       setError(err.message);
@@ -373,7 +426,7 @@ export default function Board() {
       setIsLoading(false);
       setProgress(prev => ({ ...prev, phase: 'complete' }));
     }
-  }, [exchange, isLoading, handleProgress, runTradAnalysis, data]);
+  }, [exchange, isLoading, handleProgress, runTradAnalysis, refreshSnapshotData, data]);
 
   // No auto-run — wait for manual user trigger (Refresh button)
 

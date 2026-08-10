@@ -23,6 +23,44 @@ async function loadSnapshotTradfi() {
   }
 }
 
+/**
+ * Clear the in-memory snapshot cache so the next loadSnapshotTradfi() call
+ * re-fetches /snapshot.tradfi.json from the server. Used by the Board page's
+ * Refresh button so users get fresh snapshot data without a manual browser
+ * reload.
+ *
+ * Also busts the browser HTTP cache by appending `?t=<timestamp>` to the URL
+ * (snapshot.tradfi.json is served with cache headers that may persist across
+ * soft refreshes).
+ */
+export function clearSnapshotCache() {
+  _snapshotCache = null;
+}
+
+/**
+ * Force a fresh fetch of /snapshot.tradfi.json, bypassing both the in-memory
+ * cache and the browser HTTP cache. Returns the tradfi_ohlcv object or null
+ * on failure.
+ *
+ * Used by runTradAnalysis() so the TradFi tab's Refresh button picks up newly
+ * deployed snapshots (the 4× daily refresh deploys a new file every 6 hours,
+ * but the in-memory cache would otherwise hold the stale data indefinitely).
+ */
+async function reloadSnapshotTradfi() {
+  _snapshotCache = null;
+  try {
+    // Cache-bust via query param. snapshot.tradfi.json is ~13MB so we accept
+    // the bandwidth cost in exchange for freshness on user-triggered refresh.
+    const res = await fetch(`/snapshot.tradfi.json?t=${Date.now()}`);
+    if (!res.ok) return null;
+    const snap = await res.json();
+    _snapshotCache = snap?.tradfi_ohlcv || null;
+    return _snapshotCache;
+  } catch {
+    return null;
+  }
+}
+
 function candlesFromSnapshot(snapData) {
   // Convert compact {t,o,h,l,c,v} to {ts,open,high,low,close,vol}
   if (!snapData || !Array.isArray(snapData)) return null;
@@ -52,6 +90,18 @@ export async function buildTradDataFromSnapshot() {
   }
 
   return buildTradResult(rawResults, {});
+}
+
+/**
+ * Force a fresh fetch of /snapshot.tradfi.json (bypassing both in-memory and
+ * HTTP caches) and rebuild tradData from it. Used by the Board Refresh button
+ * so users get fresh snapshot data without a manual browser reload.
+ *
+ * @returns {Promise<object|null>} fresh tradData, or null if fetch failed
+ */
+export async function rebuildTradDataFromFreshSnapshot() {
+  await reloadSnapshotTradfi();
+  return await buildTradDataFromSnapshot();
 }
 
 // ── Yahoo Finance via Cloudflare Worker proxy (live data, no rate limit) ─────

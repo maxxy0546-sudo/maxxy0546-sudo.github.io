@@ -604,7 +604,7 @@ export async function preloadExchange(exchange) {
 // by build_snapshot.js using CMC_API_KEY, refreshed 4× daily via Cloudflare
 // Worker cron). Live fallbacks (CMC → CoinGecko → CoinCap → Binance) only fire
 // when snapshot is missing or stale. This avoids CoinGecko 429s on every scan.
-import { STABLECOINS, WRAPPED } from './constants';
+import { STABLECOINS, WRAPPED, TOKENIZED_TAGS, NON_CRYPTO_NAME_KEYWORDS } from './constants';
 
 /**
  * Heuristic filter for USD-pegged tokens not in the hardcoded STABLECOINS set.
@@ -625,13 +625,49 @@ function isUsdPeggedHeuristic(symbol, name) {
 }
 
 /**
+ * Heuristic filter for non-crypto / wrapped / tokenized assets that slip into
+ * the universe from CMC's "cryptocurrency_type=all" parameter or from live
+ * fallback sources (CoinCap, Binance 24hr ticker).
+ *
+ * Catches:
+ *   - Tokenized stocks (NVDAON, NVDAX, TSLAX, bNVDA, etc.)
+ *   - Wrapped Beacon ETH (WBETH) and other wrapped variants not in WRAPPED set
+ *   - Synthetic assets
+ *
+ * Used as a fallback when the asset has no CMC tags (live sources don't
+ * supply them). The snapshot-first path uses the more reliable tag-based
+ * filter in `hasTokenizedTags` below.
+ */
+function isNonCryptoHeuristic(symbol, name) {
+  const nameLower = (name || '').toLowerCase();
+  return NON_CRYPTO_NAME_KEYWORDS.some(kw => nameLower.includes(kw));
+}
+
+/**
+ * Tag-based filter for tokenized / synthetic assets. Snapshot path supplies
+ * CMC tags so this is more reliable than the name heuristic — it catches
+ * xStocks even when the name doesn't include "xstock" or "tokenized".
+ */
+function hasTokenizedTags(tags) {
+  if (!Array.isArray(tags)) return false;
+  return tags.some(t => TOKENIZED_TAGS.has(t));
+}
+
+/**
  * Apply the standard universe filters: stablecoins, wrapped tokens, USD-pegged
- * heuristic. Returns the filtered array (caller decides on .slice cap).
+ * heuristic, tokenized-stock tags, and non-crypto name heuristic. Returns the
+ * filtered array (caller decides on .slice cap).
+ *
+ * Each asset may optionally carry `tags` (array of CMC tag slugs) and `name`.
+ * Live fallback sources that don't supply tags fall back to the name-based
+ * heuristic for tokenized-stock detection.
  */
 function filterUniverse(assets) {
   return assets.filter(a => {
     if (STABLECOINS.has(a.symbol) || WRAPPED.has(a.symbol)) return false;
     if (isUsdPeggedHeuristic(a.symbol, a.name)) return false;
+    if (hasTokenizedTags(a.tags)) return false;
+    if (isNonCryptoHeuristic(a.symbol, a.name)) return false;
     return true;
   });
 }
@@ -650,7 +686,16 @@ export async function fetchTop500(cgKey) {
         const assets = Object.values(universe)
           .filter(c => c && c.symbol)
           .sort((a, b) => (a.marketCapRank || 999) - (b.marketCapRank || 999))
-          .map(c => ({ symbol: c.symbol, name: c.name, rank: c.marketCapRank || 999 }));
+          .map(c => ({
+            symbol: c.symbol,
+            name: c.name,
+            rank: c.marketCapRank || 999,
+            // Preserve CMC tags so filterUniverse can exclude tokenized stocks
+            // (NVDAON, NVDAX, TSLAX, etc.) by their `tokenized-stock` /
+            // `xstocks-ecosystem` / `bstocks` tags. Without tags, the name-based
+            // heuristic is the only fallback and it can't catch every case.
+            tags: Array.isArray(c.tags) ? c.tags : [],
+          }));
         const filtered = filterUniverse(assets).slice(0, 500);
         if (filtered.length >= 400) {
           console.info(`Snapshot supplied ${filtered.length} assets (crypto_universe)`);
@@ -682,6 +727,10 @@ export async function fetchTop500(cgKey) {
               symbol: c.symbol.toUpperCase(),
               name: c.name,
               rank: c.cmc_rank || assets.length + 1,
+              // Preserve CMC tags so tokenized stocks (NVDAON, NVDAX, etc.)
+              // can be filtered out by filterUniverse. CMC's listings endpoint
+              // returns tags as an array of slug strings.
+              tags: Array.isArray(c.tags) ? c.tags : [],
             });
           });
           console.info(`CMC supplied ${assets.length} assets`);
