@@ -5,6 +5,12 @@
 **Target:** TrendScan signal engine integration evaluation
 **Status:** ✅ Backtest complete, integration RECOMMENDED with caveats
 
+**Implementation status (2026-08-11):** Implemented in `src/lib/signal/orthogonal.js`
+(9-signal Gram-Schmidt decorrelated composite z-score). Test suite:
+`scripts/signal/orthogonal.test.js` (run via `npm test`). The separate
+`src/lib/signal/compute.js` v3.1 engine (9-signal weighted scoring →
+STRONG/WEAK/NEUTRAL verdicts) is documented in `docs/SIGNAL_CATALOG.md` §18.
+
 ---
 
 ## Executive Summary

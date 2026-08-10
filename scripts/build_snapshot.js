@@ -1505,7 +1505,7 @@ async function main() {
   };
 
   // Large snapshot — only loaded when Board or Macro needs tradfi OHLCV.
-  // ~13 MB for 335 tickers × 250 days. Sharding keeps it off the critical path.
+  // ~22 MB for ~470 tickers × ~250 days. Sharding keeps it off the critical path.
   const tradfiSnapshot = {
     generated_at: generatedAt,
     tradfi_ohlcv: tradfiOHLCV,

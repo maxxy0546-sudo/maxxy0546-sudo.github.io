@@ -398,13 +398,18 @@ function toMassiveTicker(symbol) {
 }
 
 async function fetchMassiveCandles(symbol, timeframe = '4H', limit = 300) {
-  // Check localStorage first (runtime), then environment variable (build-time fallback)
+  // SECURITY: Read from localStorage ONLY — NOT from import.meta.env.
+  // VITE_-prefixed env vars get baked into the client bundle, exposing the
+  // paid Polygon key. The VITE_MASSIVE_API_KEY GitHub Actions secret was
+  // removed on 2026-07-16 (see SECURITY.md). Users who want Polygon must
+  // set it via localStorage.setItem('MASSIVE_API_KEY', '...') at runtime.
+  // This aligns with the security policy in src/lib/scanner/sources/massive.js.
   const apiKey = typeof window !== 'undefined'
-    ? (localStorage.getItem('MASSIVE_API_KEY') || import.meta.env?.VITE_MASSIVE_API_KEY)
-    : import.meta.env?.VITE_MASSIVE_API_KEY;
+    ? localStorage.getItem('MASSIVE_API_KEY')
+    : null;
 
   if (!apiKey) {
-    console.warn('Massive API key not configured. Set MASSIVE_API_KEY in localStorage or VITE_MASSIVE_API_KEY in .env');
+    console.warn('Massive API key not configured. Set MASSIVE_API_KEY in localStorage (see SECURITY.md).');
     return null;
   }
 

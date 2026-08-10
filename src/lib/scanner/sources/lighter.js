@@ -1,6 +1,8 @@
 /**
  * Lighter (zkLighter / Elliot) — free, no API key, CORS-enabled
- * 214 markets: crypto + ~150 tradfi (stocks, ETFs, indices, commodities, FX, pre-IPO).
+ * 214 total markets: crypto + ~94 tradfi (stocks, ETFs, indices, commodities,
+ * FX, pre-IPO). The tradfi subset is mapped in traditionalMarkets.js's
+ * LIGHTER_MARKET_IDS table.
  *
  * Docs: https://apidocs.lighter.xyz/llms.txt
  * Base: https://mainnet.zklighter.elliot.ai/api/v1

@@ -24,25 +24,52 @@
 
 ---
 
-## Status of the `src/lib/signal/compute.js` 9-gate engine
+## Status of the `src/lib/signal/compute.js` verdict engine
 
-**It does not exist in the codebase.** A search of the entire repo (`rg
-"9 gates"`, `rg "compute.js"`, `rg "signal/compute"`) returned no matches.
-The closest existing "verdict engine" is the **4-gate**
+**Implemented (v3.1, backtested & tuned).** `src/lib/signal/compute.js` is the
+production signal engine. The `/signal` route (`src/pages/Signal.jsx`) reads
+pre-computed `signal_metrics` from `snapshot.json` (built server-side by
+`scripts/compute_signal_metrics.js`) and renders STRONG / WEAK / NEUTRAL
+verdicts for BTC, Majors (ETH/SOL/HYPE), and Cash.
+
+The engine is a **weighted 9-signal scoring system** (not a pass/fail gate
+chain — each signal contributes a directional weight plus optional
+penalties/boosts to a composite stance + 0–10 confidence):
+
+| # | Signal | Source function | Role |
+|---|--------|-----------------|------|
+| 1 | adaptiveZ (90/365 blend) | `adaptiveZ` | Price z-score, regime-aware (primary driver) |
+| 2 | adaptiveZWithPctile | `adaptiveZWithPctile` | Non-parametric percentile (fat-tail detection) |
+| 3 | trendTenure | `computeTrendTenure` | Consecutive days closing above 50-MA (persistence) |
+| 4 | atrExt50ma | `computeAtrExt50ma` | Extension from 50-MA in ATR units (volatility-normalized) |
+| 5 | RS vs BTC (7-day) | `computeRsVsBtc` | Return ratio for majors (confirmation) |
+| 6 | fundingZ | `fundingZScore` | Funding rate z-score (crowding/reversal risk) — gate 6 is effectively dead in v3.1 (see code comment) |
+| 7 | RSI (penalty only) | `computeRSI` | Overbought penalty (>80 reduces STRONG) |
+| 8 | impulseZ (penalty only) | `computeImpulseZ` | Decelerating penalty (falling momentum) |
+| 9 | macroZ (boost) | `computeMacroZ` | External signal, boosts confidence 7→8 when macroZ > 1.5 |
+
+**Verdict mapping** (from `mapStanceToVerdict` + `DEFAULT_THRESHOLDS`):
+- STRONG: stretched + persistent + confirmed → high confidence
+- NEUTRAL: baseline
+- WEAK: stretched negative + persistent bearish
+
+**Backtest results** (2023-10 to 2025-07, 10-day forward, BTC/ETH/SOL — from file header):
+- STRONG: 62.0% hit rate, +5.02% avg 10-day return (363 signals)
+- WEAK:   54.1% hit rate, -1.37% avg 10-day return (61 signals)
+- NEUTRAL baseline: +2.99% avg
+
+The other verdict engines in the codebase are the **4-gate**
 `compositeEngine.computeFactorStance` (stretch / persistence / crowding /
-breadth) in `src/lib/factors/compositeEngine.js`, which produces
-CONSTRUCTIVE / SELECTIVE / DEFENSIVE / WAIT labels with a 0–10 confidence.
-The other verdict engine is `regimeSignals.computeAllocation`, which
-combines Ultra6 + OB1 + Core9 to emit ALLOCATE / STABLECOINS with
+breadth → CONSTRUCTIVE / SELECTIVE / DEFENSIVE / WAIT) in
+`src/lib/factors/compositeEngine.js`, and `regimeSignals.computeAllocation`,
+which combines Ultra6 + OB1 + Core9 to emit ALLOCATE / STABLECOINS with
 MAXIMUM / HIGH / STANDARD conviction.
 
-The /signal page (`src/pages/Signal.jsx`) also does **not** exist. The
-site's routes today are `/` (Scanner), `/board`, `/macro`.
-
-Any future `src/lib/signal/compute.js` should import from this catalog's
-existing primitives (`adaptiveZ`, `horizonReturnWithStats`,
-`computeFactorStance`, `computeRSI`, `computeOBV`, `computeMetrics`,
-`computeFundingPremia` — see §11 below) rather than re-deriving them.
+The /signal page's pre-computed metrics come from `snapshot.json`'s
+`signal_metrics` and `signal_history` keys (see README's snapshot keys
+table). The pure compute functions are shared between the production
+snapshot builder (`scripts/compute_signal_metrics.js`) and the historical
+replay backtester (`scripts/signal/backtest.js`).
 
 ---
 
@@ -58,11 +85,14 @@ existing primitives (`adaptiveZ`, `horizonReturnWithStats`,
 8. [Seasonality — Ken French baselines](#8-seasonality)
 9. [Change log — regime diff persistence](#9-change-log)
 10. [Factors engine — factor stance verdicts](#10-factors-engine)
-11. [Scanner factor engine — quintile portfolios + spread monitor](#11-scanner-factor-engine)
-12. [Scanner calculations — EMA / VWAP / RSI](#12-scanner-calculations)
-13. [Scanner scan engine — trend filter pipeline](#13-scanner-scan-engine)
-14. [Server-side crypto factor pipeline](#14-server-side-crypto-factors)
-15. [Recommended new signals to feed a /signal STRONG/WEAK/NEUTRAL engine](#15-recommended-new-signals)
+11. [Rotation detector (shared)](#11-rotation-detector-shared)
+12. [Crowding matrix](#12-crowding-matrix)
+13. [Narrative generator](#13-narrative-generator)
+14. [Scanner factor engine — quintile portfolios + spread monitor](#14-scanner-factor-engine)
+15. [Scanner calculations — EMA / VWAP / RSI](#15-scanner-calculations)
+16. [Scanner scan engine — trend filter pipeline](#16-scanner-scan-engine)
+17. [Server-side crypto factor pipeline](#17-server-side-crypto-factor-pipeline)
+18. [Signal verdict engine — STRONG / WEAK / NEUTRAL (implemented)](#18-signal-verdict-engine)
 
 ---
 
@@ -935,98 +965,96 @@ vol}` shape as client-side.
 
 ---
 
-## 18. Recommended new signals to feed a /signal STRONG/WEAK/NEUTRAL engine
+## 18. Signal verdict engine — STRONG / WEAK / NEUTRAL (implemented)
 
-Based on the catalog above, here's what a hypothetical
-`src/lib/signal/compute.js` (9 gates → STRONG/WEAK/NEUTRAL) should
-combine. All inputs already exist in the codebase; nothing new needs to
-be invented.
+**File**: `src/lib/signal/compute.js` (575 lines, v3.1 — backtested & tuned)
+**Used by**:
+- `src/pages/Signal.jsx` (renders pre-computed `signal_metrics` from `snapshot.json`)
+- `scripts/compute_signal_metrics.js` (production snapshot builder — runs server-side in GitHub Actions)
+- `scripts/signal/backtest.js` (historical replay / parameter tuning)
+- `scripts/signal/orthogonal.test.js` + `scripts/signal/compute.test.js` (112-test suite, `npm test`)
 
-### Suggested 9 gates
+**Architecture**: weighted 9-signal scoring system (NOT a pass/fail gate chain).
+Each signal contributes a directional weight + optional penalty/boost to a
+composite stance and 0–10 confidence. The final verdict is mapped from
+`(stance, confidence)` via `DEFAULT_THRESHOLDS`.
 
-| # | Gate | Source | Logic | Why |
-|---|---|---|---|---|
-| 1 | **Trend alignment** | `boardEngine.computeMetrics` | `above20 + above50 + above200 ≥ 2` | Multi-MA confirmation filters chop |
-| 2 | **Momentum stretch** | `regimePercentile.horizonReturnWithStats(closes, 20)` | `z ≥ 1.5 OR z ≤ -1.5` | 20d return at multi-month extreme |
-| 3 | **Volume confirmation** | `scanEngine.computeRVol(candles, 20)` | `rVol > 1.2 in trend direction` | Breakout without volume = fakeout |
-| 4 | **RSI not exhausted** | `regimeCalculations.computeRSI(closes, 14)` | `40 ≤ RSI ≤ 75 for longs, 25 ≤ RSI ≤ 60 for shorts` | Avoid chasing parabolic extensions |
-| 5 | **Funding not crowded** | `data/historical/{SYMBOL}/funding.json` (NEW — from `scripts/signal/fetch_data.js`) | `8h funding rate < 0.05% (annualised < 55%)` | Crowded longs get liquidated |
-| 6 | **Funding not collapsing** | same | `8h funding rate > -0.02%` | Shorts paying too much = squeeze risk |
-| 7 | **Relative strength vs BTC** | `boardEngine.computeMetrics → rs_btc_20d` | `rs_btc_20d > 0 for longs` | Don't fight BTC leadership |
-| 8 | **ATR extension reasonable** | `boardEngine.computeMetrics → atrExt50ma` | `1 ≤ atrExt50ma ≤ 4` | Not yet stretched, not dead |
-| 9 | **Breadth confirmation** | `boardEngine.buildBreadthSeries → dailySeries[last].adDiff` | `adDiff > 0 for longs` | Market-wide confirmation |
+### 15.1 `computeAssetStance({ zScore, zPctile, trendTenure, atrExt, rsVsBtc, fundingZ, rsi, obvSlope, impulseZ, returns, macroZ, mhAlignment, isBtc, ablations })`
 
-### Verdict mapping
+The core verdict function. Returns `{ stance, confidence, drivers }` where
+`stance ∈ {STRONG, NEUTRAL, WEAK}` and `confidence` is 0–10.
 
-| Pass count | Verdict |
-|---|---|
-| 7–9 gates pass | **STRONG** |
-| 4–6 gates pass | **NEUTRAL** |
-| 0–3 gates pass | **WEAK** |
+**Signal stack** (from file header):
 
-### Why these 9
+| # | Signal | Function | Role |
+|---|--------|----------|------|
+| 1 | adaptiveZ (90/365 blend) | `adaptiveZ(series, 90, 365, 0.6)` | Price z-score, regime-aware (primary driver) |
+| 2 | adaptiveZWithPctile | `adaptiveZWithPctile(series, 90, 365, 252)` | Non-parametric percentile (fat-tail detection) |
+| 3 | trendTenure | `computeTrendTenure(closes)` | Consecutive days closing above 50-MA (persistence) |
+| 4 | atrExt50ma | `computeAtrExt50ma(candles)` | Extension from 50-MA in ATR units (volatility-normalized) |
+| 5 | RS vs BTC (7-day) | `computeRsVsBtc(candles, btcCandles, 7)` | Return ratio for majors (confirmation) |
+| 6 | fundingZ | `fundingZScore(fundingHistory, asOfTs, 90)` | Funding rate z-score (crowding/reversal risk). Note: gate 6 is effectively dead in v3.1 per code comment — historical funding data was incomplete during backtest, so its weight is suppressed |
+| 7 | RSI (penalty only) | `computeRSI(closes, 14)` | Overbought penalty (>80 reduces STRONG confidence) |
+| 8 | impulseZ (penalty only) | `computeImpulseZ(closes, 13, 52)` | Decelerating penalty (falling momentum reduces STRONG) |
+| 9 | macroZ (boost) | `computeMacroZ(candles, params)` | External macro signal, boosts confidence 7→8 when macroZ > 1.5 |
 
-- Gates 1–4 reuse the existing Scanner + Board primitives — zero new
-  math, just composition.
-- Gates 5–6 are the new piece that the historical fetcher enables —
-  previously the only funding signal was the live Hyperliquid snapshot in
-  `buildQuickView.crowded`, which is point-in-time only.
-- Gate 7 ensures alignment with BTC leadership (the strongest crypto
-  regime signal in §2.1 G1 + §6.1 computeRegime).
-- Gate 8 (ATR extension) is already used in `themeStatus` STRONG/HOT
-  detection (score≥75 + atrExt>6).
-- Gate 9 (breadth) ties the per-asset signal back to the market-wide
-  regime label from `buildRegimeLabel`.
+### 15.2 `mapStanceToVerdict(stance, confidence, thresholds)`
 
-### Inputs required from `scripts/signal/fetch_data.js`
+Maps the composite stance to a verdict label. `DEFAULT_THRESHOLDS` controls
+the confidence cutoffs for STRONG vs NEUTRAL vs WEAK.
 
-The historical fetcher (created in Task 1) provides the multi-year
-klines + funding needed to:
-1. Compute per-asset `adaptiveZWithPctile` of funding rate over 252
-   windows (Gate 5 in percentile form, not just threshold).
-2. Backtest the 9-gate engine across the 2022 bear, 2023 recovery, 2024
-   halving rally, and 2025 distribution — every regime cycle.
-3. Compute per-symbol "funding exhaustion" baselines (TIA's 4h funding
-   cadence ≠ BTC's 8h cadence — needs per-symbol normalisation, which the
-   13-symbol universe enables).
+### 15.3 `computeSignal({ ... })`
 
-### Suggested file structure
+Top-level orchestrator that wires all 9 signals together for a single asset.
+Accepts pre-fetched inputs (candles, btcCandles, fundingHistory, macroState)
+and returns the final verdict + driver breakdown used by the /signal page.
 
-```
-src/lib/signal/
-├── compute.js          # 9-gate verdict engine (NEW — see §15 above)
-├── gates.js            # individual gate functions (NEW)
-├── historicalLoader.js # loads data/historical/{SYMBOL}/*.json (NEW)
-└── verdict.js          # STRONG/WEAK/NEUTRAL label mapping (NEW)
-```
+### 15.4 Backtest results
 
-Each gate function should accept `{candles, funding, metrics, breadth,
-btcMetrics}` and return `{pass: boolean, value: number, threshold: number,
-rationale: string}` — same shape as `compositeEngine.computeFactorStance`
-gates, just 9 of them.
+From the file header (2023-10 to 2025-07, 10-day forward, BTC/ETH/SOL):
+- **STRONG**: 62.0% hit rate, +5.02% avg 10-day return (363 signals)
+- **WEAK**:   54.1% hit rate, -1.37% avg 10-day return (61 signals)
+- **NEUTRAL baseline**: +2.99% avg
+
+### 15.5 Ablation support
+
+`computeAssetStance` accepts an `ablations` parameter (Set or array of
+strings) that neutralizes individual signals for backtest sensitivity
+analysis. Disabling a signal zeros its contribution to the stance/confidence
+calculation. Recognized ablation keys: `adaptiveZ`, `trendTenure`,
+`atrExt50ma`, `rsVsBtc`, `fundingZ`, `macroZBoost`, `mhAlignment`,
+`returns`, `rsiPenalty`, `impulseZPenalty`.
+
+### 15.6 Related: `src/lib/signal/orthogonal.js` (OrthoSys v6.1)
+
+A separate 9-signal orthogonal weighting system (Gram-Schmidt decorrelated)
+that produces a composite z-score for intraday timing. Exported
+`SIGNAL_NAMES` list: `vol_ratio`, `bb_width`, `rsi_signal`, `zscore_20`,
+`mom_6`, `mom_18`, `ema_cross`, `hl_mom`, `taker_ratio`. See
+`docs/ORTHOSYS_BACKTEST_REPORT.md` and `docs/ORTHOSYS_DAILY_BACKTEST_REVISED.md`
+for backtest methodology and results.
 
 ---
 
 ## Summary statistics
 
 - **Total signals catalogued**: 89 distinct calculations across 17 files.
-- **Verdict engines** (produce STRONG/WEAK/NEUTRAL-style labels): 3
+- **Verdict engines** (produce STRONG/WEAK/NEUTRAL-style labels): 4
   - `boardEngine.themeStatus` (9-state theme verdict)
   - `regimeSignals.computeAllocation` (4-state allocation verdict)
   - `factors.compositeEngine.computeFactorStance` (4-stance factor verdict)
+  - `signal/compute.computeAssetStance` (3-state STRONG/NEUTRAL/WEAK verdict — see §15)
 - **Statistical primitives** reused across the codebase: 5
   - `adaptiveZ`, `horizonReturnWithStats`, `weightedComposite`,
     `computeRSI`, `computeOBV`
-- **Files mentioned in the task that DON'T exist**: 1
-  - `src/lib/signal/compute.js` — needs to be created. Recommended design
-    in §15/§18.
-- **Files NOT mentioned in the task but contain signals**: 5
+- **Files NOT mentioned in the original task but contain signals**: 5
   - `regime/regimeRotation.js`, `regime/regimeEngine.js`,
     `regime/seasonality.js`, `regime/changeLog.js`, `regime/factorSignals.js`
-- **Pages that consume signals**: 3 (Scanner, Board, MacroRegime)
-- **Pages that DON'T exist yet**: 1 (/signal)
+- **Pages that consume signals**: 4 (Scanner `/`, Board `/board`, MacroRegime `/macro`, Signal `/signal`)
 
 ---
 
-*Document end. Last updated: 2025-07 from a fresh read of every file in
-`src/lib/` + `scripts/`.*
+*Document end. Last updated: 2026-08-11 — `src/lib/signal/compute.js` is now
+implemented (v3.1, backtested); the "Recommended new signals" design proposal
+in the original §15/§18 has been replaced with a real description of the
+implemented engine. Earlier "does not exist" status sections were stale.*

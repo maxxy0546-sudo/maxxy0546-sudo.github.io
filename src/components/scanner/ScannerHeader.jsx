@@ -1,4 +1,8 @@
 import React from 'react';
+import { TRAD_UNIVERSE } from '@/lib/board/traditionalMarkets';
+
+// Compute once at module load — TRAD_UNIVERSE is a static constant.
+const TRAD_UNIVERSE_COUNT = TRAD_UNIVERSE.length;
 
 function indicatorLabel(type, emaVal, vwapVal) {
   return type === 'vwap' ? `VWAP(${vwapVal}d)` : `EMA(${emaVal})`;
@@ -78,7 +82,7 @@ export default function ScannerHeader({ settings, scanMeta, onModeChange }) {
           {/* Short description */}
           <p className="mt-2 text-[10px] leading-relaxed max-w-lg" style={{ color: 'var(--scanner-text3)' }}>
             {isTradFi
-              ? 'Identify high-momentum tradfi tickers across 389 stocks, ETFs, commodities, and indices.'
+              ? `Identify high-momentum tradfi tickers across ${TRAD_UNIVERSE_COUNT} stocks, ETFs, commodities, and indices.`
               : 'Identify high-momentum assets across the top 500 market cap pairs.'}
           </p>
           <p className="mt-1 text-[10px] leading-relaxed max-w-lg" style={{ color: 'var(--scanner-text3)' }}>
@@ -114,7 +118,7 @@ export default function ScannerHeader({ settings, scanMeta, onModeChange }) {
             <div className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'var(--scanner-text3)' }} />
               <span>Universe</span>
-              <CondBadge color="var(--scanner-text2)">{isTradFi ? '389 TradFi' : 'Top 500'}</CondBadge>
+              <CondBadge color="var(--scanner-text2)">{isTradFi ? `${TRAD_UNIVERSE_COUNT} TradFi` : 'Top 500'}</CondBadge>
             </div>
             {settings.minVolume > 0 && (
               <div className="flex items-center gap-1.5">

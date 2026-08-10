@@ -17,6 +17,7 @@
 
 - [ ] `npm run lint` passes
 - [ ] `npm run typecheck` passes
+- [ ] `npm test` passes (112-test signal engine + orthogonal suite)
 - [ ] `npm run build` passes
 - [ ] `python3 scripts/verify-csp.py` passes (if any new external URL was added)
 - [ ] Tested locally on at least one browser

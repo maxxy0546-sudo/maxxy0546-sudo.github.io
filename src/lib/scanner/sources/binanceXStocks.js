@@ -20,7 +20,14 @@ const TIMEFRAME_INTERVAL = {
   '1W': '1w',
 };
 
-// Binance xStocks symbols (verified active Jun 2026)
+// Binance xStocks symbols currently whitelisted for the scanner resolver.
+// Binance actually lists more xStocks tokens (NVDAX, TSLAX, AAPLX, MSFTX,
+// GOOGLX, AMZNX, METAAX, etc. — see CMC's `xstocks-ecosystem` tag), but
+// they are filtered out of the Screener universe by `TOKENIZED_TAGS` in
+// src/lib/scanner/constants.js (tokenized stocks are TradFi, not crypto).
+// This whitelist exists for the tradfi resolver path only — if you want to
+// add more xStocks for tradfi coverage, add the bare ticker (e.g. 'AAPL')
+// here and the fetcher will build the ${sym}XUSDT pair automatically.
 export const TRADFI_SYMBOLS = new Set(['NVDA', 'TSLA']);
 
 export function isTradfi(symbol) {

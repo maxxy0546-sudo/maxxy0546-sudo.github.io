@@ -34,15 +34,16 @@ and reuse the key.
   users never trigger a Polygon call
 - Runtime override is supported: users can paste their own key via
   `localStorage.setItem('MASSIVE_API_KEY', '<their-key>')` in the browser
-  console, which takes precedence over the bundled key
+  console, which is the ONLY way Polygon is now invoked
 
-**Future hardening (optional):** Stop shipping any Polygon key in the
-bundle by removing the `VITE_MASSIVE_API_KEY` line from
-`.github/workflows/deploy.yml`. The resolver will skip the Polygon source
-entirely — the 6 free sources above still provide full coverage for the
-top 500 coins and all tradfi tickers. Alternatively, proxy key-requiring
-APIs through the existing Cloudflare Worker with the key held as a worker
-secret (not inlined in the client bundle).
+**Completed hardening (2026-08-11):** The `VITE_MASSIVE_API_KEY` line was
+removed from `.github/workflows/deploy.yml` (verified by `grep VITE_MASSIVE
+.github/workflows/*.yml` → no matches). The resolver no longer ships any
+Polygon key in the bundle — `fetchMassiveCandles` in
+`src/lib/scanner/exchanges.js` reads from `localStorage` only, aligning with
+the security policy in `src/lib/scanner/sources/massive.js` (which has always
+been localStorage-only). The free tier key that was previously bundled has
+been rotated out and is no longer used by the app.
 
 ---
 

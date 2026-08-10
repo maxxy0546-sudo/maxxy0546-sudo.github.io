@@ -4,6 +4,13 @@
 **Status:** ✅ Backtest complete with corrected parameters
 **Verdict:** ⚠️ The full daily-tuned system (Gram-Schmidt + cross-sectional L/S) **loses money** on the extended 2022-2025 dataset. My earlier v6.1 backtest was an artifact of per-asset thresholding, not a true representation of the system.
 
+**Implementation status (2026-08-11):** The v6.1 orthogonal composite z-score
+is implemented in `src/lib/signal/orthogonal.js` (used for intraday timing
+context, not as a standalone L/S strategy). The production signal engine is
+`src/lib/signal/compute.js` v3.1 (weighted 9-signal scoring → STRONG/WEAK/NEUTRAL
+verdicts) — see `docs/SIGNAL_CATALOG.md` §18 for the implemented engine's
+backtest results (STRONG: 62.0% hit rate, +5.02% avg 10-day return).
+
 ---
 
 ## Critical Correction to My Earlier Report
