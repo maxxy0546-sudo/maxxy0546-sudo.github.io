@@ -1239,6 +1239,13 @@ export async function runBoardAnalysis(exchange, onProgress, existingData, snaps
         volRatio: r.metrics.volRatio,
         rsi14: r.metrics.rsi14,
         rs_btc_20d: r.metrics.rs_btc_20d ?? null,
+        // ADR (Average Daily Range) — two flavors:
+        //   adrPct = trailing 20D avg (high/low - 1) * 100 — typical daily range size
+        //   adrUsedPct = today's range / trailing 20D ADR$ * 100 — exhaustion read
+        //                (150%+ = stretched, 50%- = room left). Used by CryptoTab's
+        //                ADR% column. Was missing from this mapping — bug fix.
+        adrPct: r.metrics.adrPct ?? null,
+        adrUsedPct: r.metrics.adrUsedPct ?? null,
         oiRatio,
         fundingAnn,
       };
