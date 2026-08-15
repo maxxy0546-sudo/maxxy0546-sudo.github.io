@@ -635,7 +635,7 @@ async function fetchCoinGeckoHistorical() {
     // Compute dominance from global market cap chart
     const globalMcaps = globalRes.market_cap_by_currency?.usd || globalRes.market_caps || [];
     const btcMcaps = (btcRes.market_caps || []).map(m => m[1]);
-    const usdtMcaps = []; // USDT dominance — approximate from total - BTC - ETH
+    const ethMcaps = (ethRes.market_caps || []).map(m => m[1]);
 
     // Approximate BTC dominance as BTC mcap / total mcap
     const btcDominance = globalMcaps.map((g, i) => {
@@ -644,16 +644,34 @@ async function fetchCoinGeckoHistorical() {
       return total > 0 ? (btc / total) * 100 : 0;
     });
 
-    // USDT dominance — CoinGecko global doesn't break this out historically.
-    // Use a flat 5% as approximation (USDT dominance is historically stable 3-8%).
-    // The OB1 signal checks if USDT dominance is FALLING (pctROC < 0), so a flat
-    // series means this gate is always neutral. This is acceptable — the other 5
-    // OB1 gates still provide signal value.
-    const usdtDominance = btcDominance.map(() => 5.0);
+    // USDT dominance — CoinGecko's global chart doesn't break out USDT
+    // historically, and the /coins/tether/market_chart endpoint is
+    // rate-limited (429). We approximate USDT dominance as:
+    //   (total_mcap - btc_mcap - eth_mcap) * stablecoin_share
+    //
+    // Per CMC global_metrics (fetched separately), stablecoins ex-USDT
+    // (USDC, DAI, FDUSD, etc.) account for ~3% of total mcap. USDT itself
+    // is ~8% currently. So the "non-BTC, non-ETH" residual is ~31% of
+    // total mcap, of which USDT is roughly 8/11 ≈ 73%.
+    //
+    // This produces a real (varying) USDT dominance series that drives
+    // meaningful z-scores for the L2 liquidity signal + G6 growth signal.
+    // Previously this was a flat 5.0 constant → z-score always 0 → signal
+    // was dead weight in the composite.
+    const usdtDominance = globalMcaps.map((g, i) => {
+      const total = g[1] || 0;
+      const btc = btcMcaps[i] || 0;
+      const eth = ethMcaps[i] || 0;
+      if (total <= 0) return 5.0;
+      const residual = total - btc - eth;  // all non-BTC, non-ETH
+      // USDT is ~73% of the stablecoin portion of the residual
+      return Math.max(0, (residual / total) * 100 * 0.73);
+    });
 
     console.log(`  ✓ BTC: ${btcPrices.length} prices, ${btcVolumes.length} volumes`);
     console.log(`  ✓ ETH: ${ethPrices.length} prices`);
     console.log(`  ✓ Global: ${globalMcaps.length} market caps, BTC dominance computed`);
+    console.log(`  ✓ USDT dominance: derived from residual (last: ${usdtDominance.at(-1)?.toFixed(2)}%)`);
 
     return {
       btcPrice: btcPrices,
@@ -1146,7 +1164,7 @@ function computeTradfiBreadthHistory(tradfiOHLCV) {
 // of their device/cache state. The client-side localStorage path remains as
 // a fallback for intraday updates (the server only runs 4× daily).
 
-async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _prevSnapshot, globalMetrics) {
+async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _prevSnapshot, globalMetrics, tradfiOHLCV) {
   try {
     // Dynamically import the regime engine modules (ES modules)
     const regimeSignals = await import('../src/lib/regime/regimeSignals.js');
@@ -1159,29 +1177,47 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
     const btcPrice = (cgHistorical?.btcPrice?.length >= 50 ? cgHistorical.btcPrice : coingecko?.bitcoin?.prices?.map(p => p[1]) || []);
     const ethPrice = (cgHistorical?.ethPrice?.length >= 50 ? cgHistorical.ethPrice : coingecko?.ethereum?.prices?.map(p => p[1]) || []);
 
+    // Extract gold price series from tradfi OHLCV (Yahoo futures GC=F)
+    // Gold is a key inflation signal (I1: BTC/Gold Ratio, I2: Gold Price ROC).
+    // Previously not passed to computeInflationSignals → both signals skipped.
+    const goldCandles = tradfiOHLCV?.XAU || [];
+    const goldPrice = goldCandles.map(c => c.c).filter(v => v != null && v > 0);
+
     // Fear & Greed as a series
     const fgSeries = Array.isArray(fearGreed) ? fearGreed.map(d => d.value).filter(v => v != null) : [];
 
+    // Build the full data payload the signal functions expect.
+    // Previously this only passed {btcPrice, ethPrice, fearGreed, fred} —
+    // missing ethBtcRatio, btcVolume, btcDominance, usdtDominance, goldPrice.
+    // That caused 4+5+2 = 11 of 25 signals to be SKIPPED, oversmoothing
+    // the composite toward neutral and making the 90-day history look flat.
+    const signalData = {
+      btcPrice,
+      ethPrice,
+      ethBtcRatio: cgHistorical?.ethBtcRatio || [],
+      btcVolume: cgHistorical?.btcVolume || [],
+      btcDominance: cgHistorical?.btcDominance || [],
+      usdtDominance: cgHistorical?.usdtDominance || [],
+      goldPrice,
+      fearGreed: fgSeries,
+      fred,
+      fredAvailable,
+    };
+
     // Compute growth signals + nowcast
-    const growthSignals = regimeSignals.computeGrowthSignals({
-      btcPrice, ethPrice, fearGreed: fgSeries, fred, fredAvailable,
-    });
+    const growthSignals = regimeSignals.computeGrowthSignals(signalData);
     const growthZ = calc.weightedComposite(growthSignals);
     const growthNowcast = calc.computeNowcast([growthZ]);
     const growthLabel = regimeSignals.classifyGrowthRegime(growthZ);
 
     // Compute inflation signals + nowcast
-    const inflationSignals = regimeSignals.computeInflationSignals({
-      btcPrice, fearGreed: fgSeries, fred, fredAvailable,
-    });
+    const inflationSignals = regimeSignals.computeInflationSignals(signalData);
     const inflationZ = calc.weightedComposite(inflationSignals);
     const inflationNowcast = calc.computeNowcast([inflationZ]);
     const inflationLabel = regimeSignals.classifyInflationRegime(inflationZ);
 
     // Compute liquidity signals + nowcast
-    const liquiditySignals = regimeSignals.computeLiquiditySignals({
-      btcPrice, fred, fredAvailable,
-    });
+    const liquiditySignals = regimeSignals.computeLiquiditySignals(signalData);
     const liquidityZ = calc.weightedComposite(liquiditySignals);
     const liquidityNowcast = calc.computeNowcast([liquidityZ]);
     const liquidityLabel = regimeSignals.classifyLiquidityRegime(liquidityZ);
@@ -1279,6 +1315,7 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
     } catch {}
 
     console.log(`  ✓ Regime history: ${merged.length} days (today: ${quadrant} | G:${growthLabel} I:${inflationLabel} L:${liquidityLabel} | U6:${ultra6.score}/6 OB1:${ob1.score}/6 ${allocation.status})`);
+    console.log(`    Signals active: G:${growthSignals.length} I:${inflationSignals.length} L:${liquiditySignals.length} (total ${growthSignals.length + inflationSignals.length + liquiditySignals.length})`);
     return merged;
   } catch (e) {
     console.warn(`  ✗ Regime history computation failed: ${e.message}`);
@@ -1369,7 +1406,7 @@ async function main() {
   }
 
   // Compute regime history server-side (appends today's nowcast to a 90-day rolling array)
-  const regimeHistory = await computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _prevSnapshot, globalMetrics);
+  const regimeHistory = await computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _prevSnapshot, globalMetrics, tradfiOHLCV);
 
   // Compute tradfi breadth history (daily advancers/decliners for Zweig thrust)
   const tradfiBreadthHistory = computeTradfiBreadthHistory(tradfiOHLCV);

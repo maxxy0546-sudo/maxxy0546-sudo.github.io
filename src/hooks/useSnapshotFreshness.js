@@ -1,22 +1,26 @@
 /**
  * useSnapshotFreshness — hook for assessing snapshot data staleness
  *
- * Snapshot refreshes 4× daily (04:00, 10:00, 16:00, 22:00 UTC). The banner uses
- * the snapshot's `generated_at` timestamp to determine how stale the data is.
+ * Snapshot refreshes 6× daily via Cloudflare Worker cron at 00:00, 04:00,
+ * 08:00, 12:00, 16:00, 20:00 UTC (7 days/week). GitHub Actions cron is the
+ * backup on the same schedule. The banner uses the snapshot's `generated_at`
+ * timestamp to determine how stale the data is.
  *
  * Staleness thresholds:
- *   FRESH    → < 6h old   → no banner (silent)
- *   STALE    → 6–12h old  → amber banner ("last refresh may have missed")
- *   CRITICAL → > 12h old  → red banner ("multiple scheduled refreshes missed")
+ *   FRESH    → < 5h old   → no banner (silent)
+ *   STALE    → 5–9h old   → amber banner ("last refresh may have missed")
+ *   CRITICAL → > 9h old   → red banner ("multiple scheduled refreshes missed")
  *
- * The 6h threshold gives one scheduled refresh worth of buffer (refreshes
- * are 6h apart). The 12h threshold means two consecutive refreshes have
+ * The 5h threshold gives one scheduled refresh worth of buffer (refreshes
+ * are 4h apart). The 9h threshold means two consecutive refreshes have
  * been missed — strong signal of CI failure or upstream API outage.
  */
 
 import { useMemo } from 'react';
 
-const REFRESH_HOURS_UTC = [4, 10, 16, 22];  // 04:00, 10:00, 16:00, 22:00 UTC
+// Cloudflare Worker cron triggers refresh-snapshot.yml every 4h, 7 days/week.
+// GitHub Actions cron is the backup on the same schedule.
+const REFRESH_HOURS_UTC = [0, 4, 8, 12, 16, 20];  // 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC
 
 /**
  * Compute hours until the next scheduled refresh.
@@ -31,8 +35,8 @@ function hoursUntilNextRefresh(now) {
   for (const h of REFRESH_HOURS_UTC) {
     if (h > nowUtcHours) return h - nowUtcHours;
   }
-  // All today's refreshes have passed — next is tomorrow at 04:00 UTC
-  return 24 - nowUtcHours + 4;
+  // All today's refreshes have passed — next is tomorrow at 00:00 UTC
+  return 24 - nowUtcHours;
 }
 
 /**
@@ -84,9 +88,9 @@ export function useSnapshotFreshness(generatedAt) {
 
     // Use a ternary so TypeScript infers the literal union type
     // 'fresh' | 'stale' | 'critical' (rather than widening to `string`).
-    // Thresholds: <6h=fresh (1 refresh buffer), 6-12h=stale (1 missed),
-    // >12h=critical (2+ missed). Refreshes are 6h apart.
-    const status = ageHours < 6 ? 'fresh' : ageHours < 12 ? 'stale' : 'critical';
+    // Thresholds: <5h=fresh (1 refresh buffer), 5-9h=stale (1 missed),
+    // >9h=critical (2+ missed). Refreshes are 4h apart (Cloudflare Worker cron).
+    const status = ageHours < 5 ? 'fresh' : ageHours < 9 ? 'stale' : 'critical';
 
     const hoursLeft = hoursUntilNextRefresh(now);
     const nextRefreshLabel = hoursLeft < 1

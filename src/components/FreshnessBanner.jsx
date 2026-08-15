@@ -1,15 +1,17 @@
 /**
  * FreshnessBanner — shows a dismissible alert when snapshot data is stale
  *
- * Snapshot refreshes 4× daily (04:00, 10:00, 16:00, 22:00 UTC). When the most
- * recent scheduled refresh has missed, the snapshot.json served to clients
- * is stale. Without this banner, users see "current" verdicts and signals
- * that are actually hours or days old — leading to bad decisions.
+ * Snapshot refreshes 6× daily via Cloudflare Worker cron at 00:00, 04:00,
+ * 08:00, 12:00, 16:00, 20:00 UTC (7 days/week). GitHub Actions cron is the
+ * backup on the same schedule. When the most recent scheduled refresh has
+ * missed, the snapshot.json served to clients is stale. Without this banner,
+ * users see "current" verdicts and signals that are actually hours or days
+ * old — leading to bad decisions.
  *
  * Visual states:
- *   FRESH    (< 6h)   → banner not rendered (silent)
- *   STALE    (6-12h)  → amber banner with dismiss button
- *   CRITICAL (> 12h)  → red banner with dismiss button + GitHub Actions link
+ *   FRESH    (< 5h)   → banner not rendered (silent)
+ *   STALE    (5-9h)   → amber banner with dismiss button
+ *   CRITICAL (> 9h)   → red banner with dismiss button + GitHub Actions link
  *
  * Dismiss behavior:
  *   - Dismissed per-session (sessionStorage) — reappears on next visit

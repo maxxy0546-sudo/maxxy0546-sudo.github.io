@@ -1,41 +1,39 @@
 # TrendScan — Snapshot Health Check
 #
 # Runs every 2 hours and verifies the snapshot was refreshed within the last
-# 8 hours. If the snapshot is stale (no successful refresh in 8h+), opens a
+# 6 hours. If the snapshot is stale (no successful refresh in 6h+), opens a
 # GitHub Issue so the team can investigate.
 #
 # Why this exists:
 #   GitHub Actions cron is unreliable — scheduled runs can be delayed 30min
 #   to 6h+, or dropped entirely during peak load. The refresh-snapshot.yml
-#   workflow runs 4× daily (every 6h), but we've observed days where only
-#   1 of 4 scheduled runs actually fired. Without this health check, a
-#   missed refresh could leave the site serving stale data for 24h+ before
+#   workflow runs 6× daily (every 4h) via Cloudflare Worker cron, with
+#   GitHub Actions cron as backup. Without this health check, a missed
+#   refresh could leave the site serving stale data for hours before
 #   anyone notices.
 #
 # What this does:
 #   1. Fetches public/snapshot.json from the live site
 #   2. Parses generated_at timestamp
-#   3. If age > 8h, opens (or comments on) a GitHub Issue with 'stale-snapshot' label
-#   4. If age > 24h, escalates by adding 'critical' label
+#   3. If age > 6h, opens (or comments on) a GitHub Issue with 'stale-snapshot' label
+#   4. If age > 12h, escalates by adding 'critical' label
 #
-# The 8h threshold gives one full refresh cycle of buffer (refreshes are
-# every 6h). The 24h threshold means 4+ consecutive refreshes have been
+# The 6h threshold gives one full refresh cycle of buffer (refreshes are
+# every 4h). The 12h threshold means 3+ consecutive refreshes have been
 # missed — strong signal of CI failure or upstream API outage.
 #
 # THRESHOLD DELIBERATE MISMATCH WITH IN-PRODUCT FRESHNESS BANNER:
 #   The in-product FreshnessBanner (src/hooks/useSnapshotFreshness.js) uses
-#   tighter thresholds — FRESH <6h, STALE 6-12h (amber), CRITICAL >12h (red).
-#   This CI health check uses looser thresholds — FRESH <8h, STALE 8-24h,
-#   CRITICAL >24h.
+#   tighter thresholds — FRESH <5h, STALE 5-9h (amber), CRITICAL >9h (red).
+#   This CI health check uses looser thresholds — FRESH <6h, STALE 6-12h,
+#   CRITICAL >12h.
 #
 #   The gap is intentional. The user-facing banner should warn users BEFORE
 #   maintainers get paged, so users can interpret the displayed data with
 #   appropriate caution. The CI check opens a GitHub Issue, which is a
 #   noisier signal — we want to avoid issue spam from minor cron delays
-#   (GitHub Actions routinely delays scheduled runs by 30-90min, and the
-#   concurrency group means a delayed run can push the next one back by
-#   up to 6h). The 8h CI threshold gives one full refresh cycle of true
-#   buffer beyond what users see.
+#   (GitHub Actions routinely delays scheduled runs by 30-90min). The 6h CI
+#   threshold gives one full refresh cycle of true buffer beyond what users see.
 #
 #   If you change one set of thresholds, review the other to decide
 #   whether the gap should be preserved, narrowed, or eliminated.
@@ -97,11 +95,12 @@ jobs:
           echo "generated_at=$GENERATED_AT" >> $GITHUB_OUTPUT
           echo "age_hours=$AGE_HOURS" >> $GITHUB_OUTPUT
 
-          # Determine status: fresh (<8h), stale (8-24h), critical (>24h)
+          # Determine status: fresh (<6h), stale (6-12h), critical (>12h)
+          # Thresholds match the Cloudflare Worker cron (every 4h, 6× daily).
           STATUS="fresh"
-          if (( $(echo "$AGE_HOURS > 24" | bc -l) )); then
+          if (( $(echo "$AGE_HOURS > 12" | bc -l) )); then
             STATUS="critical"
-          elif (( $(echo "$AGE_HOURS > 8" | bc -l) )); then
+          elif (( $(echo "$AGE_HOURS > 6" | bc -l) )); then
             STATUS="stale"
           fi
           echo "status=$STATUS" >> $GITHUB_OUTPUT

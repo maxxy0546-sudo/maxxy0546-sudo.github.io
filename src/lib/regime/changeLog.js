@@ -180,6 +180,63 @@ export function diffAndPersist(current) {
 }
 
 /**
+ * Compute changes against the stored previous snapshot, AND check the
+ * server-side regime_history for any quadrant/label flips that occurred
+ * between the last visit and now (covering days the user was away).
+ *
+ * This is the enhanced version of diffAndPersist — it catches regime shifts
+ * that happened while the user wasn't looking, even if the current state
+ * happens to match the last-visited state (e.g. regime went EXPANSION →
+ * RECESSIONARY → EXPANSION while user was away for a week).
+ *
+ * @param {object} current - current regime (from live computation)
+ * @param {Array<object>} serverHistory - snapshot.regime_history (90-day server-side)
+ * @returns {Array<string>} change messages (may be empty)
+ */
+export function diffAndPersistWithServerHistory(current, serverHistory) {
+  const previous = loadLastSnapshot();
+  const lastVisitTs = getLastSnapshotTime();
+  const changes = computeChanges(current, previous);
+
+  // Check server history for any quadrant flips since last visit.
+  // This catches shifts that happened while the user was away — even if
+  // the regime returned to its previous state by the time they returned.
+  if (serverHistory && Array.isArray(serverHistory) && serverHistory.length > 0 && lastVisitTs) {
+    const lastVisitDate = new Date(lastVisitTs).toISOString().split('T')[0];
+    const entriesSinceVisit = serverHistory.filter(h => h.date > lastVisitDate);
+
+    if (entriesSinceVisit.length > 0) {
+      // Find quadrant flips in the server history since last visit
+      const quadrants = entriesSinceVisit.map(h => h.quadrant).filter(Boolean);
+      const uniqueQuadrants = [...new Set(quadrants)];
+      if (uniqueQuadrants.length > 1) {
+        const flipSummary = uniqueQuadrants.join(' → ');
+        changes.push(`Server history (${entriesSinceVisit.length}d since last visit): quadrant flipped ${flipSummary}`);
+      }
+
+      // Find label changes per axis
+      for (const axis of ['growth', 'inflation', 'liquidity']) {
+        const labels = entriesSinceVisit.map(h => h[axis]).filter(Boolean);
+        const uniqueLabels = [...new Set(labels)];
+        if (uniqueLabels.length > 1) {
+          changes.push(`${axis} shifted during absence: ${uniqueLabels.join(' → ')}`);
+        }
+      }
+
+      // Find allocation status changes
+      const allocStatuses = entriesSinceVisit.map(h => h.allocation_status).filter(Boolean);
+      const uniqueAlloc = [...new Set(allocStatuses)];
+      if (uniqueAlloc.length > 1 && uniqueAlloc.includes('ALLOCATE')) {
+        changes.push(`Allocation triggered during absence: ${uniqueAlloc.join(' → ')}`);
+      }
+    }
+  }
+
+  saveSnapshot(current);
+  return changes;
+}
+
+/**
  * Clear the stored snapshot (e.g. when user dismisses the banner).
  */
 export function clearSnapshot() {

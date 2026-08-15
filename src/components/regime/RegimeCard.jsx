@@ -3,8 +3,9 @@
  * Shows SPRING/SUMMER/FALL/WINTER + Liquidity overlay
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { detectRegimeRotation } from '@/lib/regime/regimeRotation';
+import { useSnapshot } from '@/hooks/useSnapshot';
 
 const SEASON_CONFIG = {
   SPRING: {
@@ -51,6 +52,32 @@ const LIQ_COLORS = {
 };
 
 export default function RegimeCard({ regime }) {
+  // Rotation: detect from snapshot.regime_history (server-side, authoritative)
+  // + localStorage (today's intraday entry). Previously only read localStorage,
+  // which meant rotation detection only worked for days the user visited the
+  // page. Now reads server-side 90-day history so rotation works even after
+  // a multi-day absence.
+  //
+  // Hooks MUST be called before any early return (rules of hooks).
+  const snapshot = useSnapshot();
+  const [rotationInfo, setRotationInfo] = useState(null);
+  useEffect(() => {
+    try {
+      const serverHistory = snapshot?.regime_history || [];
+      const localHistory = JSON.parse(localStorage.getItem('trendscan_regime_history') || '[]');
+      // Merge: server is authoritative; add today's local entry if not in server
+      const today = new Date().toISOString().split('T')[0];
+      const serverHasToday = serverHistory.some(h => h.date === today);
+      const localToday = localHistory.find(h => h.date === today);
+      const merged = serverHasToday || !localToday
+        ? serverHistory
+        : [...serverHistory, localToday];
+      if (Array.isArray(merged) && merged.length >= 4) {
+        setRotationInfo(detectRegimeRotation(merged));
+      }
+    } catch {}
+  }, [snapshot]);
+
   if (!regime) {
     return (
       <div
@@ -81,31 +108,18 @@ export default function RegimeCard({ regime }) {
   const seasonConfig = SEASON_CONFIG[quadrant] || SEASON_CONFIG.FLUX;
   const liqColor = LIQ_COLORS[liquidity] || LIQ_COLORS.NEUTRAL;
 
-  // Rotation: detect from localStorage history (if available)
-  let rotationInfo = null;
-  try {
-    const historyRaw = localStorage.getItem('trendscan_regime_history');
-    if (historyRaw) {
-      const history = JSON.parse(historyRaw);
-      if (Array.isArray(history) && history.length >= 4) {
-        rotationInfo = detectRegimeRotation(history);
-      }
-    }
-  } catch {}
-
-  // Next scheduled FRED snapshot refresh.
-  // The refresh-snapshot.yml workflow runs at 14:00, 18:00, 22:00 UTC on
-  // weekdays (Mon-Fri). Compute the next upcoming run from now.
+  // Next scheduled snapshot refresh.
+  // The Cloudflare Worker cron triggers refresh-snapshot.yml every 4 hours
+  // at 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC (7 days/week).
+  // GitHub Actions cron is the backup (same schedule). Compute the next
+  // upcoming run from now.
   function nextRefreshTime() {
     const now = new Date();
-    const UTC_HOURS = [14, 18, 22]; // 10am, 2pm, 6pm ET
-    // Iterate forward day-by-day up to 7 days
-    for (let d = 0; d < 8; d++) {
-      const candidate = new Date(now);
-      candidate.setUTCDate(now.getUTCDate() + d);
-      const dayOfWeek = candidate.getUTCDay(); // 0=Sun, 6=Sat
-      if (dayOfWeek === 0 || dayOfWeek === 6) continue; // skip weekends
+    const UTC_HOURS = [0, 4, 8, 12, 16, 20]; // Cloudflare Worker cron, 7 days/week
+    for (let d = 0; d < 3; d++) {  // search up to 3 days ahead (overkill, but safe)
       for (const hr of UTC_HOURS) {
+        const candidate = new Date(now);
+        candidate.setUTCDate(now.getUTCDate() + d);
         candidate.setUTCHours(hr, 0, 0, 0);
         if (candidate.getTime() > now.getTime()) {
           return candidate;

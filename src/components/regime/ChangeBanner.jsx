@@ -4,24 +4,33 @@
  * Borrowed from factorwatch.ai's SNAPSHOT.changes pattern.
  * Shows a dismissible banner at the top of the MacroRegime page:
  *   "⚠ Since last visit (2h ago): growth crossed +2σ · regime shifted NEUTRAL → EXPANSION"
+ *
+ * Enhanced: also checks snapshot.regime_history for any quadrant/label
+ * flips that occurred between the last visit and now (covering days the
+ * user was away). Previously only compared current vs last-visited state,
+ * which missed shifts that happened during multi-day absences.
  */
 
 import React, { useState, useEffect } from 'react';
-import { diffAndPersist, timeAgo, getLastSnapshotTime } from '@/lib/regime/changeLog';
+import { diffAndPersistWithServerHistory, timeAgo, getLastSnapshotTime } from '@/lib/regime/changeLog';
+import { useSnapshot } from '@/hooks/useSnapshot';
 
 export default function ChangeBanner({ regime }) {
   const [changes, setChanges] = useState([]);
   const [dismissed, setDismissed] = useState(false);
   const [lastVisit, setLastVisit] = useState(null);
+  const snapshot = useSnapshot();
 
   useEffect(() => {
     if (!regime) return;
     // Capture the previous timestamp BEFORE diffAndPersist overwrites it
     const prevTs = getLastSnapshotTime();
-    const newChanges = diffAndPersist(regime);
+    // Pass server-side regime_history so we catch shifts during absence
+    const serverHistory = snapshot?.regime_history || [];
+    const newChanges = diffAndPersistWithServerHistory(regime, serverHistory);
     setChanges(newChanges);
     setLastVisit(timeAgo(prevTs));
-  }, [regime]);
+  }, [regime, snapshot]);
 
   if (dismissed || changes.length === 0) return null;
 
