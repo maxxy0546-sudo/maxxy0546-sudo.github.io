@@ -2,8 +2,8 @@
  * ScrollingTicker — horizontally scrolling price marquee for major assets.
  *
  * Fetches live prices from OKX SWAP perps (single batch API call, CORS-enabled,
- * free, no API key). Polls every 15s — well within OKX's rate limit (20 req/2s
- * per IP for the /market/tickers endpoint).
+ * free, no API key). Polls every 5s — well within OKX's rate limit (20 req/2s
+ * per IP for the /market/tickers endpoint = 600 req/min; we use 12 req/min).
  *
  * Tickers displayed (10):
  *   BTC, ETH, SOL, HYPE  — crypto majors
@@ -38,7 +38,7 @@ const TICKER_INST_IDS = [
 ];
 
 const OKX_TICKERS_URL = 'https://www.okx.com/api/v5/market/tickers?instType=SWAP';
-const POLL_INTERVAL_MS = 15_000;  // 15s — OKX allows 20 req/2s, so 1 req/15s is trivial
+const POLL_INTERVAL_MS = 5_000;  // 5s — OKX allows 20 req/2s (600 req/min), so 12 req/min is trivial
 
 /**
  * Format price with appropriate decimals based on magnitude.
