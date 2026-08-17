@@ -281,11 +281,23 @@ export async function computeCryptoFactors(prevSnapshot) {
     spread_monitor: Object.values(spreadMonitor).map(row => ({
       factor: row.factor,
       label: row.label,
-      spread_20d: row.spread_20d ? { ret: row.spread_20d.ret, z: row.spread_20d.z, pctile: row.spread_20d.pctile } : null,
-      rel_20d: row.rel_20d ? { ret: row.rel_20d.ret, z: row.rel_20d.z, pctile: row.rel_20d.pctile } : null,
-      spread_5d: row.spread_5d ? { ret: row.spread_5d.ret, z: row.spread_5d.z, pctile: row.spread_5d.pctile } : null,
+      // All 4 horizons for BOTH rel (long-only minus benchmark) AND spread (Q5-Q1).
+      // Previously only stored a subset (spread_20d, rel_20d, spread_5d, spread_1d,
+      // spread_60d) — missing rel_1d, rel_5d, rel_60d, rel_ytd, spread_ytd. This
+      // caused the Factor Monitor table to show '—' in those cells when reading
+      // from snapshot, even though the data was computed. Now all fields are
+      // stored so the snapshot view matches the live view's completeness.
+      rel_1d:    row.rel_1d    ? { ret: row.rel_1d.ret,    z: row.rel_1d.z,    pctile: row.rel_1d.pctile }    : null,
+      rel_5d:    row.rel_5d    ? { ret: row.rel_5d.ret,    z: row.rel_5d.z,    pctile: row.rel_5d.pctile }    : null,
+      rel_20d:   row.rel_20d   ? { ret: row.rel_20d.ret,   z: row.rel_20d.z,   pctile: row.rel_20d.pctile }   : null,
+      rel_60d:   row.rel_60d   ? { ret: row.rel_60d.ret,   z: row.rel_60d.z,   pctile: row.rel_60d.pctile }   : null,
       spread_1d: row.spread_1d ? { ret: row.spread_1d.ret, z: row.spread_1d.z, pctile: row.spread_1d.pctile } : null,
-      spread_60d: row.spread_60d ? { ret: row.spread_60d.ret, z: row.spread_60d.z, pctile: row.spread_60d.pctile } : null,
+      spread_5d: row.spread_5d ? { ret: row.spread_5d.ret, z: row.spread_5d.z, pctile: row.spread_5d.pctile } : null,
+      spread_20d:row.spread_20d? { ret: row.spread_20d.ret,z: row.spread_20d.z,pctile: row.spread_20d.pctile }: null,
+      spread_60d:row.spread_60d? { ret: row.spread_60d.ret,z: row.spread_60d.z,pctile: row.spread_60d.pctile }: null,
+      // YTD (ret only — the engine doesn't compute z/pctile for YTD)
+      rel_ytd:    row.rel_ytd    || null,
+      spread_ytd: row.spread_ytd || null,
     })),
     // Server-side crowding matrix (computed from 90-day accumulated history)
     crowding: {
