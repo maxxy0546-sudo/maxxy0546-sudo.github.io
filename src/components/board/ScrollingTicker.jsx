@@ -5,9 +5,10 @@
  * free, no API key). Polls every 15s — well within OKX's rate limit (20 req/2s
  * per IP for the /market/tickers endpoint).
  *
- * Tickers displayed (8):
+ * Tickers displayed (10):
  *   BTC, ETH, SOL, HYPE  — crypto majors
  *   SPY, QQQ             — equity indices (OKX tokenized stock perps)
+ *   DRAM, SOXL           — sector ETFs (memory + semiconductors)
  *   CL                   — crude oil (WTI futures perp)
  *   XAU                  — gold (spot perp)
  *
@@ -22,7 +23,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchWithTimeout } from '@/lib/scanner/fetchWithTimeout';
 
-// OKX SWAP instIds for the 8 tickers we display.
+// OKX SWAP instIds for the tickers we display.
 const TICKER_INST_IDS = [
   { instId: 'BTC-USDT-SWAP',  symbol: 'BTC',  label: 'BTC',   category: 'crypto' },
   { instId: 'ETH-USDT-SWAP',  symbol: 'ETH',  label: 'ETH',   category: 'crypto' },
@@ -30,6 +31,8 @@ const TICKER_INST_IDS = [
   { instId: 'HYPE-USDT-SWAP', symbol: 'HYPE', label: 'HYPE',  category: 'crypto' },
   { instId: 'SPY-USDT-SWAP',  symbol: 'SPY',  label: 'SPY',   category: 'index'  },
   { instId: 'QQQ-USDT-SWAP',  symbol: 'QQQ',  label: 'QQQ',   category: 'index'  },
+  { instId: 'DRAM-USDT-SWAP', symbol: 'DRAM', label: 'DRAM',  category: 'etf'     },
+  { instId: 'SOXL-USDT-SWAP', symbol: 'SOXL', label: 'SOXL',  category: 'etf'     },
   { instId: 'CL-USDT-SWAP',   symbol: 'CL',   label: 'WTI',   category: 'commodity' },
   { instId: 'XAU-USDT-SWAP',  symbol: 'XAU',  label: 'GOLD',  category: 'commodity' },
 ];
