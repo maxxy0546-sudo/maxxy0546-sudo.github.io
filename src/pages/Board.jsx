@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import BoardHeader from '@/components/board/BoardHeader';
+import ScrollingTicker from '@/components/board/ScrollingTicker';
 import DailyBoard from '@/components/board/DailyBoard';
 import CryptoTab from '@/components/board/CryptoTab';
 import ThemesTab from '@/components/board/ThemesTab';
@@ -493,6 +494,9 @@ export default function Board() {
           </span>
         )}
       </div>
+
+      {/* Scrolling price ticker — live prices from OKX SWAP perps (polls every 15s) */}
+      <ScrollingTicker />
 
       {/* Breadth header strip */}
       <BoardHeader
