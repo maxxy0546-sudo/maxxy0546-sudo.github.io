@@ -21,7 +21,7 @@
  * then optionally live-refreshes for fresh data.
  */
 
-import { computeFactorScores, buildQuintilePortfolios, computeSpreadMonitor, detectFactorRotation } from '../src/lib/scanner/factorEngine.js';
+import { computeFactorScores, buildQuintilePortfolios, computeSpreadMonitor, detectFactorRotation, buildQuilt } from '../src/lib/scanner/factorEngine.js';
 import { detectRotation, appendToHistory } from '../src/lib/factors/rotationDetector.js';
 import { buildCrowdingMatrix, extractSpreadSeries } from '../src/lib/factors/crowdingMatrix.js';
 import { fetchWithTimeout } from '../src/lib/scanner/fetchWithTimeout.js';
@@ -247,6 +247,14 @@ export async function computeCryptoFactors(prevSnapshot) {
   }
   const historyCrowding = buildCrowdingMatrix(historySpreadSeries, 90);
 
+  // 12b. Build quilt (monthly returns heatmap) — server-side.
+  // This was previously only computed client-side on manual "LIVE REFRESH",
+  // which meant the Factor Monitor tab showed no quilt until the user
+  // clicked the button. Now it's computed server-side from the same candle
+  // data we already have in memory (no extra API calls) and stored in the
+  // snapshot so the Factor Monitor renders fully on first paint.
+  const quilt = buildQuilt(portfoliosByFactor, candlesBySymbol);
+
   // 13. Compute factor stances using the crowding data
   const stances = {};
   for (const row of Object.values(spreadMonitor)) {
@@ -257,7 +265,7 @@ export async function computeCryptoFactors(prevSnapshot) {
     };
   }
 
-  console.log(`  ✓ Crypto factors: ${universe.length} assets, leader=${rotation.leader_20d}, history=${factorHistory.length} days, spread_history=${spreadHistory.length} days`);
+  console.log(`  ✓ Crypto factors: ${universe.length} assets, leader=${rotation.leader_20d}, history=${factorHistory.length} days, spread_history=${spreadHistory.length} days, quilt=${quilt?.length || 0} months`);
 
   // 14. Build compact snapshot data (don't store full candle data — too large)
   const factorData = {
@@ -288,6 +296,11 @@ export async function computeCryptoFactors(prevSnapshot) {
     },
     // Server-side stances (computed from spread z + crowding + rotation)
     stances,
+    // Quilt — monthly returns heatmap for each factor portfolio.
+    // Small data (~13 months × 5 factors × {factor, label, return} ≈ 2 KB).
+    // Previously this was null in the snapshot → Factor Monitor required
+    // a manual live refresh to display the quilt. Now it's always available.
+    quilt: quilt || [],
   };
 
   return {

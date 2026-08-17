@@ -149,7 +149,7 @@ export default function FactorMonitor() {
             },
             confirmedRotation,
             crowding: crowdingAdapter,  // Server-side crowding from 90-day history
-            quilt: null,                // Quilt needs full candle data — computed on live load
+            quilt: cf.quilt || null,   // Server-side quilt (monthly returns heatmap) — added 2026-08-18
             stances,
             primarySignal: primaryEntry ? {
               factorName: primaryEntry[0],
@@ -334,21 +334,20 @@ export default function FactorMonitor() {
     );
   }
 
+  // Phase: Now that the server computes the quilt + all factor data, the
+  // snapshot is the authoritative source. The manual "LIVE REFRESH" button
+  // is still available for users who want the freshest possible data (the
+  // snapshot refreshes every 4h), but it's no longer REQUIRED for full
+  // data display — the Factor Monitor renders fully from snapshot on
+  // first paint.
   if (!hasLoaded && !loading && !data && !snapshotLoaded) {
     return (
       <div className="font-mono text-center py-12 px-5">
-        <div className="text-3xl mb-4 opacity-30">◈</div>
-        <div className="text-sm mb-1" style={{ color: 'var(--scanner-text2)' }}>Factor Monitor</div>
-        <div className="text-[11px] mb-4" style={{ color: 'var(--scanner-text3)' }}>
-          Click below to fetch top 100 crypto assets and compute factor quintile portfolios
+        <div className="text-3xl mb-4 animate-pulse opacity-30">◈</div>
+        <div className="text-sm" style={{ color: 'var(--scanner-text2)' }}>Loading factor data…</div>
+        <div className="text-[11px] mt-2" style={{ color: 'var(--scanner-text3)' }}>
+          Reading from server-side snapshot
         </div>
-        <button
-          onClick={() => { setHasLoaded(true); setLoading(true); }}
-          className="font-mono text-[10px] font-bold tracking-wide px-4 py-2 rounded"
-          style={{ background: 'var(--scanner-accent)', color: '#000', border: 'none', cursor: 'pointer' }}
-        >
-          ▶ LOAD FACTOR DATA
-        </button>
       </div>
     );
   }
@@ -418,13 +417,14 @@ export default function FactorMonitor() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {!hasLoaded && (
+          {!hasLoaded && data && (
             <button
               onClick={() => { setHasLoaded(true); setLoading(true); }}
               className="font-mono text-[9px] font-bold tracking-wide px-3 py-1.5 rounded"
-              style={{ background: 'var(--scanner-bg2)', color: 'var(--scanner-text2)', border: '1px solid var(--scanner-border2)', cursor: 'pointer' }}
+              style={{ background: 'var(--scanner-bg2)', color: 'var(--scanner-text3)', border: '1px solid var(--scanner-border2)', cursor: 'pointer' }}
+              title="Fetch fresh candles from exchange APIs (snapshot refreshes every 4h via Cloudflare cron)"
             >
-              ▶ LIVE REFRESH
+              ↻ LIVE REFRESH
             </button>
           )}
           <div className="text-right">
