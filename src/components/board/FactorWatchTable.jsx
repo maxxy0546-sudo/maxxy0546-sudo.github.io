@@ -87,16 +87,7 @@ export default function FactorWatchTable() {
   return (
     <div className="font-mono mb-5">
       <SectionLabel right={<CopyCsvButtons tableId="factorwatch-baskets-table" />}>
-        FactorWatch · Thematic Basket Performance
-        {asOf && (
-          <span className="ml-2 text-[8px] px-1.5 py-0.5 rounded" style={{
-            background: 'var(--scanner-bg2)',
-            color: 'var(--scanner-text3)',
-            border: '1px solid var(--scanner-border2)',
-          }}>
-            as of {asOf}
-          </span>
-        )}
+        Thematic Basket Performance · data from FactorWatch.ai
       </SectionLabel>
 
       <div className="overflow-x-auto rounded" style={{ border: '1px solid var(--scanner-border2)' }}>
