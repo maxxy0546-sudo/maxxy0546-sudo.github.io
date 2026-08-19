@@ -12,6 +12,7 @@ import React, { useMemo } from 'react';
 import { computeThemeScores, getRegimeRead } from '@/lib/board/tradfiScoring';
 import { useSortableTable } from '@/lib/board/useSortableTable';
 import CopyCsvButtons from './CopyCsvButtons';
+import FactorWatchTable from './FactorWatchTable';
 import { scoreClass as scoreCls, statusClass } from '@/lib/board/tableUtils';
 
 function fmtPct(v, decimals = 1) {
@@ -169,6 +170,9 @@ export default function ThemeScoresTab({ tradData, isLoading }) {
           </table>
         </div>
       </div>
+
+      {/* FactorWatch S&P 500 Factor Spread Monitor */}
+      <FactorWatchTable />
     </div>
   );
 }
