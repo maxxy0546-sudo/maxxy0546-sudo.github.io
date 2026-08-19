@@ -1256,8 +1256,9 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
       btcDominance: globalMetrics?.btcDominance ?? null,
       // Grand composite (0-100) — displayed on the Regime Card.
       // Match computeGrandComposite from regimeCalculations.js:
-      //   50 + (growth + inflation + liquidity) / 3 * 10
-      grandComposite: Math.round((50 + (growthNowcast.nowcast + inflationNowcast.nowcast + liquidityNowcast.nowcast) / 3 * 10) * 10) / 10,
+      //   0.33*growth + 0.33*inflation + 0.34*liquidity
+      // (nowcasts are already on the 0-100 scale, so we just average them)
+      grandComposite: Math.round((0.33 * growthNowcast.nowcast + 0.33 * inflationNowcast.nowcast + 0.34 * liquidityNowcast.nowcast) * 10) / 10,
       // Allocation data (server-side, unified)
       ultra6_score: ultra6.score,
       ultra6_on: ultra6.on,
