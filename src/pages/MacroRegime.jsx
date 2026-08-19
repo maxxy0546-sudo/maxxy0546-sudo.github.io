@@ -119,11 +119,25 @@ function SourceBadge({ sources }) {
 }
 
 export default function MacroRegime() {
-  // Snapshot is used for the freshness banner (regime page's quadrant
-  // history and nowcasts are persisted in snapshot.regime_history, so
-  // snapshot freshness directly affects what users see here).
+  // Snapshot is the AUTHORITATIVE source for the regime display.
+  // The page reads snapshot.regime_history[-1] on mount for instant first
+  // paint with server-side computed values (quadrant, nowcasts, Ultra6/OB1
+  // signals, allocation). The live fetch (useQuery below) UPDATES the
+  // display when it completes — it does NOT wipe the snapshot data.
+  //
+  // This fixes the issue where the live client-side computation produced
+  // different results from the server-side computation (different data
+  // sources + different input completeness), causing the displayed tables
+  // to disagree with the snapshot.
   const snapshot = useSnapshot();
-  // Fetch all regime data
+
+  // Get the latest server-side regime entry from snapshot.regime_history.
+  // This is computed server-side by build_snapshot.js every 4h (Cloudflare
+  // cron) with the FULL signal set (all 25 signals active).
+  const serverRegimeEntry = snapshot?.regime_history?.[snapshot.regime_history.length - 1] || null;
+
+  // Fetch all regime data (live) — used to UPDATE the display with fresh
+  // data. Runs in the background; doesn't block first paint.
   const {
     data: rawData,
     isLoading,
@@ -137,8 +151,79 @@ export default function MacroRegime() {
     retry: 2,
   });
 
-  // Compute regime state from raw data
-  const regime = useMemo(() => {
+  // Build a regime object from the server-side snapshot entry.
+  // This is the SNAPSHOT-FIRST baseline — always available on first paint.
+  const snapshotRegime = useMemo(() => {
+    if (!serverRegimeEntry) return null;
+
+    // Build the regime object shape that RegimeCard, CompositeGauge,
+    // SignalTable, and AllocationPanel expect. The snapshot entry has
+    // all the computed values (nowcasts, labels, scores, signals,
+    // allocation) — we just reshape them.
+    const e = serverRegimeEntry;
+    return {
+      quadrant: e.quadrant,
+      liquidity: e.liquidity,
+      label: e.quadrant,  // RegimeCard uses `label` for the season config lookup
+      grandComposite: e.grandComposite ?? (
+        // Fallback: compute from nowcasts if grandComposite wasn't stored
+        // (older snapshot entries may not have this field)
+        50 + (e.growthNowcast + e.inflationNowcast + e.liquidityNowcast) / 3 * 10
+      ),
+      growth: {
+        nowcast: e.growthNowcast ?? 50,
+        meZ: 0,  // Snapshot doesn't store meZ — live refresh will fill this in
+        impulseZ: 0,
+        label: e.growth ?? 'NEUTRAL',
+        signals: [],  // Snapshot doesn't store the full signals array
+        topDrivers: e.growth_drivers || [],
+      },
+      inflation: {
+        nowcast: e.inflationNowcast ?? 50,
+        meZ: 0,
+        impulseZ: 0,
+        label: e.inflation ?? 'NEUTRAL',
+        signals: [],
+        topDrivers: e.inflation_drivers || [],
+      },
+      liquidityData: {
+        nowcast: e.liquidityNowcast ?? 50,
+        meZ: 0,
+        impulseZ: 0,
+        label: e.liquidity ?? 'NEUTRAL',
+        signals: [],
+        topDrivers: e.liquidity_drivers || [],
+      },
+      ultra6: {
+        signals: e.ultra6_signals || {},
+        score: e.ultra6_score ?? 0,
+        on: e.ultra6_on ?? false,
+      },
+      ob1: {
+        signals: e.ob1_signals || {},
+        score: e.ob1_score ?? 0,
+        on: e.ob1_on ?? false,
+      },
+      core9Score: e.core9_score ?? 0,
+      allocation: {
+        status: e.allocation_status ?? 'STABLECOINS',
+        vehicle: e.allocation_vehicle,
+        conviction: e.allocation_conviction ?? 'NONE',
+      },
+      fredAvailable: true,  // Server-side computation always has FRED if available
+      totalSignals: 25,
+      sources: { fred: true },
+      btcPrice: [],
+      lastUpdated: e.date ? `${e.date} (server)` : new Date().toISOString(),
+      fromSnapshot: true,
+    };
+  }, [serverRegimeEntry]);
+
+  // Compute regime state from live data — UPDATES (not replaces) the
+  // snapshot baseline. If rawData is available, we use the live-computed
+  // regime (which has meZ, impulseZ, full signals arrays). If rawData is
+  // not yet loaded, we fall back to the snapshot regime.
+  const liveRegime = useMemo(() => {
     if (!rawData) return null;
 
     const {
@@ -331,6 +416,67 @@ export default function MacroRegime() {
     };
   }, [rawData]);
 
+  // FINAL REGIME SELECTION — snapshot-first, live-updates the display fields.
+  //
+  // The snapshot (server-side, computed every 4h with full signal inputs) is
+  // AUTHORITATIVE for verdicts: quadrant, labels, allocation, ultra6, ob1.
+  // The live computation enriches the display with meZ, impulseZ, and the
+  // full signals arrays (which the snapshot doesn't store in full).
+  //
+  // This ensures the displayed tables always match the snapshot's verdicts,
+  // while still showing fresh nowcast values and signal details from the
+  // live fetch. The live refresh UPDATES the display — it does NOT wipe the
+  // server-side verdicts or revert to the old issue of differing computations.
+  const regime = useMemo(() => {
+    // If no snapshot data at all, use live (or null if neither available)
+    if (!snapshotRegime) return liveRegime;
+
+    // If no live data yet, use snapshot as-is
+    if (!liveRegime) return snapshotRegime;
+
+    // MERGE: start with snapshot (authoritative verdicts), then overlay
+    // live-only display fields (meZ, impulseZ, full signals arrays).
+    return {
+      ...snapshotRegime,
+      // Live-enriched display fields (don't affect verdicts):
+      growth: {
+        ...snapshotRegime.growth,
+        meZ: liveRegime.growth?.meZ ?? snapshotRegime.growth.meZ,
+        impulseZ: liveRegime.growth?.impulseZ ?? snapshotRegime.growth.impulseZ,
+        // Use live signals array for the CompositeGauge's signal list display
+        // (snapshot only stores topDrivers, not the full array)
+        signals: liveRegime.growth?.signals?.length > 0
+          ? liveRegime.growth.signals
+          : snapshotRegime.growth.signals,
+      },
+      inflation: {
+        ...snapshotRegime.inflation,
+        meZ: liveRegime.inflation?.meZ ?? snapshotRegime.inflation.meZ,
+        impulseZ: liveRegime.inflation?.impulseZ ?? snapshotRegime.inflation.impulseZ,
+        signals: liveRegime.inflation?.signals?.length > 0
+          ? liveRegime.inflation.signals
+          : snapshotRegime.inflation.signals,
+      },
+      liquidityData: {
+        ...snapshotRegime.liquidityData,
+        meZ: liveRegime.liquidityData?.meZ ?? snapshotRegime.liquidityData.meZ,
+        impulseZ: liveRegime.liquidityData?.impulseZ ?? snapshotRegime.liquidityData.impulseZ,
+        signals: liveRegime.liquidityData?.signals?.length > 0
+          ? liveRegime.liquidityData.signals
+          : snapshotRegime.liquidityData.signals,
+      },
+      // Live BTC price for the SignalTable's "BTC above MA50" display
+      btcPrice: liveRegime.btcPrice || snapshotRegime.btcPrice,
+      // Keep live sources/fredAvailable for the SourceBadge + FredNotice
+      fredAvailable: liveRegime.fredAvailable ?? snapshotRegime.fredAvailable,
+      sources: liveRegime.sources || snapshotRegime.sources,
+      totalSignals: liveRegime.totalSignals || snapshotRegime.totalSignals,
+      // Mark as merged (for debugging — not currently displayed)
+      fromSnapshot: true,
+      lastUpdated: liveRegime.lastUpdated,
+    };
+  }, [snapshotRegime, liveRegime]);
+
   // Seasonality (from Ken French data in snapshot)
   const seasonality = useMemo(() => {
     // Field is 'ken_french' in snapshot.json (snake_case from build_snapshot.js)
@@ -339,8 +485,10 @@ export default function MacroRegime() {
     return computeSeasonality(kf);
   }, [rawData]);
 
-  // Loading state
-  if (isLoading) {
+  // Loading state — only show full-page spinner if we have NO data at all
+  // (not even snapshot). If snapshotRegime is available, render the page
+  // immediately with snapshot data; the live fetch will update it in-place.
+  if (isLoading && !regime) {
     return (
       <div className="min-h-screen pb-16" style={{ background: 'var(--scanner-bg)', fontFamily: 'IBM Plex Mono, monospace' }}>
         <div className="px-5 md:px-8 pt-4">

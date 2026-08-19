@@ -1254,14 +1254,38 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
       liquidityNowcast: Math.round(liquidityNowcast.nowcast * 10) / 10,
       // BTC dominance from CMC global metrics (for 7D delta display on Board)
       btcDominance: globalMetrics?.btcDominance ?? null,
+      // Grand composite (0-100) — displayed on the Regime Card.
+      // Match computeGrandComposite from regimeCalculations.js:
+      //   50 + (growth + inflation + liquidity) / 3 * 10
+      grandComposite: Math.round((50 + (growthNowcast.nowcast + inflationNowcast.nowcast + liquidityNowcast.nowcast) / 3 * 10) * 10) / 10,
       // Allocation data (server-side, unified)
       ultra6_score: ultra6.score,
       ultra6_on: ultra6.on,
+      ultra6_signals: ultra6.signals,  // Per-signal breakdown for SignalTable
       ob1_score: ob1.score,
       ob1_on: ob1.on,
+      ob1_signals: ob1.signals,        // Per-signal breakdown for SignalTable
+      core9_score: core9Score,
       allocation_status: allocation.status,
       allocation_vehicle: allocation.vehicle,
       allocation_conviction: allocation.conviction,
+      // Top drivers for each axis (for CompositeGauge display).
+      // Take top 3 by absolute value, same as the client-side computation.
+      growth_drivers: growthSignals
+        .filter(s => s.value != null)
+        .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+        .slice(0, 3)
+        .map(s => ({ name: s.name, value: Math.round(s.value * 100) / 100 })),
+      inflation_drivers: inflationSignals
+        .filter(s => s.value != null)
+        .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+        .slice(0, 3)
+        .map(s => ({ name: s.name, value: Math.round(s.value * 100) / 100 })),
+      liquidity_drivers: liquiditySignals
+        .filter(s => s.value != null)
+        .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+        .slice(0, 3)
+        .map(s => ({ name: s.name, value: Math.round(s.value * 100) / 100 })),
     };
 
     // Merge with previous history + backfill data
