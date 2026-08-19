@@ -150,6 +150,11 @@ function normalizeFactorKey(name) {
 /**
  * Parse the factor spread monitor table (id="monitor").
  * Returns object keyed by factor name with ret + sigma for each timeframe.
+ *
+ * The live site has 8 columns: Factor, 1d, 5d, 20d, 60d, MTD, YTD, 1y
+ * (as of 2026-08-19). Previously the scraper only parsed 5 data columns
+ * (1d, 5d, 20d, 60d, ytd) and read MTD as ytd — bug. Now parses all 7
+ * data columns correctly.
  */
 function parseFactorMonitor(html) {
   const tableHtml = findTableById(html, 'monitor');
@@ -158,8 +163,9 @@ function parseFactorMonitor(html) {
   const rows = parseTable(tableHtml);
   if (rows.length < 2) return null;
 
-  // Header: ['Factor', '1 day', '5 days', '20 days', '60 days', 'YTD']
-  const timeframes = ['1d', '5d', '20d', '60d', 'ytd'];
+  // Header: ['Factor', '1 day', '5 days', '20 days', '60 days', 'MTD', 'YTD', '1y']
+  // timeframes match the DATA columns (offset by 1 for the Factor name column)
+  const timeframes = ['1d', '5d', '20d', '60d', 'mtd', 'ytd', '1y'];
 
   const factors = {};
   for (let i = 1; i < rows.length; i++) {
@@ -173,13 +179,14 @@ function parseFactorMonitor(html) {
     const factorData = {};
     for (let j = 0; j < timeframes.length; j++) {
       const cellText = row[j + 1];
+      if (!cellText) continue;  // column may not exist if site layout changed
       if (j < 4) {
-        // First 4 columns have ret + sigma
+        // First 4 columns have ret + sigma (e.g. "+0.7% (+0.8σ)")
         const { ret, sigma } = parseRetSigma(cellText);
         factorData[`${timeframes[j]}_ret`] = ret;
         factorData[`${timeframes[j]}_sigma`] = sigma;
       } else {
-        // YTD column has only ret
+        // MTD, YTD, 1y columns have only ret (no sigma)
         factorData[`${timeframes[j]}_ret`] = parsePct(cellText);
       }
     }
@@ -233,6 +240,11 @@ function parseRevisions(html) {
 /**
  * Parse the baskets performance table (first table on baskets.html).
  * Returns object keyed by basket name with ret for each timeframe.
+ *
+ * The live site has 8 columns: Basket, 1d, 5d, 20d, 60d, MTD, YTD, 1y
+ * (as of 2026-08-19). Previously the scraper only parsed 5 data columns
+ * (1d, 5d, 20d, 60d, ytd) and read MTD as ytd — bug. Now parses all 7
+ * data columns correctly.
  */
 function parseBaskets(html) {
   const allTables = [...html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)];
@@ -243,10 +255,10 @@ function parseBaskets(html) {
     if (rows.length < 2) continue;
 
     const header = rows[0].map(h => h.toLowerCase());
-    // Baskets table has columns: ['Basket', '1d', '5d', '20d', '60d', 'YTD']
+    // Baskets table has columns: ['Basket', '1d', '5d', '20d', '60d', 'MTD', 'YTD', '1y']
     if (!header[0] || !header[0].includes('basket')) continue;
 
-    const timeframes = ['1d', '5d', '20d', '60d', 'ytd'];
+    const timeframes = ['1d', '5d', '20d', '60d', 'mtd', 'ytd', '1y'];
     const baskets = {};
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
@@ -256,7 +268,9 @@ function parseBaskets(html) {
 
       const basketData = {};
       for (let j = 0; j < timeframes.length; j++) {
-        basketData[`${timeframes[j]}_ret`] = parsePct(row[j + 1]);
+        const cellText = row[j + 1];
+        if (!cellText) continue;  // column may not exist if site layout changed
+        basketData[`${timeframes[j]}_ret`] = parsePct(cellText);
       }
       baskets[basketName] = basketData;
     }
