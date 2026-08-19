@@ -78,18 +78,29 @@ export default function MacroCharts({ regime }) {
         // Read localStorage for today's intraday entry
         const localHistory = JSON.parse(localStorage.getItem('trendscan_regime_history') || '[]');
 
-        // Merge: server history (authoritative) + any newer local entry for today
+        // Merge: server history (authoritative) + any newer local entry for today.
+        // The server snapshot is the authoritative 90-day series, computed every
+        // 4h with full signal inputs. localStorage is only used to add today's
+        // intraday entry if the server hasn't run yet today. We do NOT fall back
+        // to localStorage for the entire history — if the server snapshot is
+        // unavailable, the chart shows an empty state rather than potentially
+        // stale localStorage data that could disagree with the displayed verdicts.
         const today = new Date().toISOString().split('T')[0];
         const localToday = localHistory.find(h => h.date === today);
         const serverHasToday = serverHistory.some(h => h.date === today);
 
         let merged;
         if (localToday && !serverHasToday) {
+          // Server hasn't run today yet — add today's intraday entry to the
+          // server's historical base. This is safe — we're only adding one
+          // day, not replacing the series.
           merged = [...serverHistory, localToday];
-        } else if (localToday && serverHasToday) {
-          merged = serverHistory;  // server is authoritative
         } else {
-          merged = serverHistory.length > 0 ? serverHistory : localHistory;
+          // Server is authoritative (either has today, or we don't have a
+          // local today to add). Do NOT fall back to localHistory for the
+          // full series — that could show stale data disagreeing with the
+          // snapshot verdicts.
+          merged = serverHistory;
         }
 
         // Sort by date and cap at 90 days

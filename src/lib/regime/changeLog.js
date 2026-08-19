@@ -21,9 +21,20 @@ const STORAGE_TS_KEY = 'trendscan_last_regime_ts';
 /**
  * Save the current regime snapshot to localStorage.
  * Call this AFTER every successful regime computation.
+ *
+ * Defensive check: if the regime object has `fromSnapshot: true`, it means
+ * the verdicts (quadrant, labels, allocation) come from the server-side
+ * snapshot — which is what we want to persist. If `fromSnapshot` is false
+ * or undefined, the regime was computed client-side from live data, which
+ * could disagree with the snapshot. In that case we log a warning so future
+ * refactors that break the MacroRegime merge order are visible — but we
+ * still persist (better to have a fallback than nothing).
  */
 export function saveSnapshot(regime) {
   try {
+    if (!regime.fromSnapshot) {
+      console.warn('[changeLog] saving regime WITHOUT fromSnapshot flag — verdicts may not match server snapshot');
+    }
     const payload = {
       ts: Date.now(),
       quadrant: regime.quadrant,
@@ -43,6 +54,7 @@ export function saveSnapshot(regime) {
       },
       grandComposite: regime.grandComposite,
       fredAvailable: regime.fredAvailable,
+      fromSnapshot: regime.fromSnapshot || false,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     localStorage.setItem(STORAGE_TS_KEY, String(payload.ts));

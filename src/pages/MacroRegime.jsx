@@ -350,31 +350,68 @@ export default function MacroRegime() {
       ? totalSignals
       : growthSignals.filter(s => !s.requiresFred).length;
 
-    // Persist regime quadrant history to localStorage for rotation detection
-    // (RegimeCard reads 'trendscan_regime_history' for flip-flag logic)
-    // MacroCharts also reads this to render the Nowcast History graph.
-    // MUST be above the return — otherwise it's unreachable dead code
+    // Persist regime quadrant history to localStorage — BUT only if the
+    // server snapshot doesn't already have today's entry.
+    //
+    // This localStorage is a FALLBACK for when the snapshot fetch fails
+    // (MacroCharts + RegimeCard fall back to it). The server snapshot is
+    // authoritative (computed every 4h with full signal inputs). If the
+    // server already has today's entry, we DON'T overwrite localStorage
+    // with live values — that would create a disagreement between the
+    // displayed (snapshot) verdicts and the fallback (localStorage) data.
+    //
+    // If the server hasn't run today yet (no entry for today's date),
+    // we persist the live values so the fallback has something current.
+    // This is safe — we're only adding today's intraday entry, not
+    // replacing the historical series.
     try {
       const historyKey = 'trendscan_regime_history';
       const existing = JSON.parse(localStorage.getItem(historyKey) || '[]');
       const today = new Date().toISOString().split('T')[0];
-      if (!existing.find(h => h.date === today)) {
+      const alreadyHasToday = existing.some(h => h.date === today);
+
+      // Check if the server snapshot has today's entry — if it does,
+      // sync localStorage to match the server (authoritative) rather
+      // than persisting live values that might disagree.
+      const serverHistory = snapshot?.regime_history || [];
+      const serverHasToday = serverHistory.some(h => h.date === today);
+
+      if (serverHasToday) {
+        // Server has today — sync localStorage to the server's values so
+        // the fallback matches the displayed verdicts. Only update if
+        // localStorage is missing today or has a different quadrant.
+        const serverToday = serverHistory.find(h => h.date === today);
+        const localToday = existing.find(h => h.date === today);
+        if (!localToday || localToday.quadrant !== serverToday.quadrant) {
+          // Replace or add today's entry with server values
+          const filtered = existing.filter(h => h.date !== today);
+          filtered.push({
+            date: today,
+            quadrant: serverToday.quadrant,
+            growth: serverToday.growth,
+            inflation: serverToday.inflation,
+            liquidity: serverToday.liquidity,
+            growthNowcast: serverToday.growthNowcast,
+            inflationNowcast: serverToday.inflationNowcast,
+            liquidityNowcast: serverToday.liquidityNowcast,
+          });
+          localStorage.setItem(historyKey, JSON.stringify(filtered.slice(-90)));
+        }
+      } else if (!alreadyHasToday) {
+        // Server doesn't have today AND localStorage doesn't have today —
+        // persist the live values as an intraday fallback. This is the
+        // only case where live values go into localStorage.
         existing.push({
           date: today,
           quadrant,
           growth: growthLabel,
           inflation: inflationLabel,
           liquidity: liquidityLabel,
-          // Persist numeric nowcast scores (0-100) so MacroCharts can
-          // plot a real history instead of an empty graph. Older entries
-          // (before this field was added) will be missing these and
-          // MacroCharts falls back to 50 (neutral) for those days.
           growthNowcast: Math.round(growthNowcast.nowcast * 10) / 10,
           inflationNowcast: Math.round(inflationNowcast.nowcast * 10) / 10,
           liquidityNowcast: Math.round(liquidityNowcast.nowcast * 10) / 10,
         });
-        const pruned = existing.slice(-90);
-        localStorage.setItem(historyKey, JSON.stringify(pruned));
+        localStorage.setItem(historyKey, JSON.stringify(existing.slice(-90)));
       }
     } catch (e) {
       console.warn('[MacroRegime] history persist failed:', e.message);

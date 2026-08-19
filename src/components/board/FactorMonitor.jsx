@@ -244,14 +244,16 @@ export default function FactorMonitor() {
         const spreadSeries = extractSpreadSeries(portfoliosByFactor, candlesBySymbol, 90);
         const crowding = buildCrowdingMatrix(spreadSeries, 90);
 
-        // 8c. Use server-side factor history from snapshot (Phase 3) — falls
-        // back to localStorage if snapshot history isn't available.
-        // The server-side history is shared across all visitors and persists
-        // across browser cache clears.
+        // 8c. Use server-side factor history from snapshot as the HISTORICAL BASE.
+        // The server builds this 90-day series every 4h — it's the authoritative
+        // historical record needed for rotation detection (3-session confirm /
+        // 10-session fresh). The live refresh enriches with fresh candle data,
+        // but must NOT replace the historical series — that would break the
+        // multi-day rotation calculations.
         const HISTORY_KEY = 'trendscan_crypto_factor_history';
         const today = new Date().toISOString().slice(0, 10);
 
-        // Read server-side history from snapshot
+        // Read server-side history from snapshot — this is the BASE (days 1-89)
         let snapshotHistory = null;
         try {
           const snapRes = await fetch('/snapshot.json');
@@ -261,11 +263,38 @@ export default function FactorMonitor() {
           }
         } catch {}
 
-        // Prefer server-side history; fall back to localStorage
-        let history = snapshotHistory || loadFactorHistory(HISTORY_KEY);
-        history = appendToHistory(history, today, snapshotRotation.leader_20d);
-        // Also update localStorage as a fallback
-        saveFactorHistory(HISTORY_KEY, history);
+        // Build the history for rotation detection:
+        // - If server history exists, use it as the base. Only append today's
+        //   client-derived leader if the server doesn't already have today's
+        //   entry (server runs 4h ago, live is fresher — but the server's
+        //   historical entries for prior days are authoritative).
+        // - If no server history (snapshot fetch failed), fall back to
+        //   localStorage (which was populated from prior server fetches).
+        let history;
+        if (snapshotHistory && snapshotHistory.length > 0) {
+          const serverHasToday = snapshotHistory.some(h => h.date === today);
+          if (serverHasToday) {
+            // Server already has today's entry — use it as-is. Don't append
+            // a client-derived entry that could disagree with the server's
+            // leader for today. The server's historical base is what drives
+            // the rotation calculation (held-days, flip-flag).
+            history = snapshotHistory;
+          } else {
+            // Server doesn't have today yet (hasn't run since midnight UTC).
+            // Append today's client-derived leader to the server base.
+            // This is safe — we're only adding today's entry, not replacing
+            // the historical series.
+            history = appendToHistory(snapshotHistory, today, snapshotRotation.leader_20d);
+          }
+          // Update localStorage with the server-based history so the
+          // fallback stays in sync with the server (not stale client data)
+          saveFactorHistory(HISTORY_KEY, history);
+        } else {
+          // No server history available — use localStorage fallback
+          history = loadFactorHistory(HISTORY_KEY);
+          history = appendToHistory(history, today, snapshotRotation.leader_20d);
+          saveFactorHistory(HISTORY_KEY, history);
+        }
         const confirmedRotation = detectRotation(history);
 
         // 8d. Build quilt (activates previously dead code)

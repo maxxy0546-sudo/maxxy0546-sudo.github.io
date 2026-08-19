@@ -3,9 +3,7 @@
  * Shows SPRING/SUMMER/FALL/WINTER + Liquidity overlay
  */
 
-import React, { useState, useEffect } from 'react';
-import { detectRegimeRotation } from '@/lib/regime/regimeRotation';
-import { useSnapshot } from '@/hooks/useSnapshot';
+import React from 'react';
 
 const SEASON_CONFIG = {
   SPRING: {
@@ -52,31 +50,11 @@ const LIQ_COLORS = {
 };
 
 export default function RegimeCard({ regime }) {
-  // Rotation: detect from snapshot.regime_history (server-side, authoritative)
-  // + localStorage (today's intraday entry). Previously only read localStorage,
-  // which meant rotation detection only worked for days the user visited the
-  // page. Now reads server-side 90-day history so rotation works even after
-  // a multi-day absence.
-  //
-  // Hooks MUST be called before any early return (rules of hooks).
-  const snapshot = useSnapshot();
-  const [rotationInfo, setRotationInfo] = useState(null);
-  useEffect(() => {
-    try {
-      const serverHistory = snapshot?.regime_history || [];
-      const localHistory = JSON.parse(localStorage.getItem('trendscan_regime_history') || '[]');
-      // Merge: server is authoritative; add today's local entry if not in server
-      const today = new Date().toISOString().split('T')[0];
-      const serverHasToday = serverHistory.some(h => h.date === today);
-      const localToday = localHistory.find(h => h.date === today);
-      const merged = serverHasToday || !localToday
-        ? serverHistory
-        : [...serverHistory, localToday];
-      if (Array.isArray(merged) && merged.length >= 4) {
-        setRotationInfo(detectRegimeRotation(merged));
-      }
-    } catch {}
-  }, [snapshot]);
+  // The rotation detection previously here (detectRegimeRotation) was dead
+  // code — rotationInfo was set but never read in the JSX. Removed to avoid
+  // confusion and the localStorage merge that could disagree with the snapshot.
+  // Rotation/flip-flag display now comes from the snapshot's regime_history
+  // via the AllocationPanel (which shows the server-side flip_flag).
 
   if (!regime) {
     return (
