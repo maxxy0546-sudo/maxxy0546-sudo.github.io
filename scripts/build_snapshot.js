@@ -1720,7 +1720,36 @@ async function main() {
   // a rolling 90-day array stored in snapshot.dominance_history. When the
   // CoinGecko historical fails, the regime computation can use this history
   // instead of a flat approximation.
+  //
+  // BACKFILL: If dominance_history is empty or very short, we backfill from
+  // regime_history entries that already have btcDominance stored (the server
+  // has been storing btcDominance in regime_history since July 2026). This
+  // gives us 20+ days of real dominance data immediately — no waiting 10
+  // days for accumulation.
   let dominanceHistory = _prevSnapshot?.dominance_history || [];
+
+  // Backfill from regime_history if dominance_history is short (< 30 days)
+  if (dominanceHistory.length < 30 && regimeHistory?.length > 0) {
+    const existingDates = new Set(dominanceHistory.map(h => h.date));
+    for (const rh of regimeHistory) {
+      if (rh.btcDominance != null && !existingDates.has(rh.date)) {
+        dominanceHistory.push({
+          date: rh.date,
+          btcDominance: rh.btcDominance,
+          ethDominance: null,  // regime_history doesn't store ETH dominance
+          // USDT dominance: estimate from residual (non-BTC, non-ETH) × ~27%
+          usdtDominance: Math.max(0, 100 - rh.btcDominance - 11) * 0.27,
+        });
+        existingDates.add(rh.date);
+      }
+    }
+    // Sort by date and cap at 90
+    dominanceHistory.sort((a, b) => a.date.localeCompare(b.date));
+    dominanceHistory = dominanceHistory.slice(-90);
+    console.log(`  ✓ Dominance history backfilled from regime_history: ${dominanceHistory.length} days`);
+  }
+
+  // Append today's entry from global_metrics (more accurate than regime_history)
   if (globalMetrics?.btcDominance) {
     const today = new Date().toISOString().slice(0, 10);
     const hasToday = dominanceHistory.some(h => h.date === today);
@@ -1729,12 +1758,19 @@ async function main() {
         date: today,
         btcDominance: globalMetrics.btcDominance,
         ethDominance: globalMetrics.ethDominance ?? null,
-        // USDT dominance: total - BTC - ETH, then estimate USDT share
         usdtDominance: globalMetrics.totalMarketCap && globalMetrics.btcDominance
           ? Math.max(0, 100 - globalMetrics.btcDominance - (globalMetrics.ethDominance ?? 0)) * 0.27
           : 8.0,
       });
-      dominanceHistory = dominanceHistory.slice(-90); // cap at 90 days
+      dominanceHistory = dominanceHistory.slice(-90);
+    } else {
+      // Update today's entry with the latest global_metrics values
+      const todayEntry = dominanceHistory.find(h => h.date === today);
+      todayEntry.btcDominance = globalMetrics.btcDominance;
+      todayEntry.ethDominance = globalMetrics.ethDominance ?? todayEntry.ethDominance;
+      todayEntry.usdtDominance = globalMetrics.totalMarketCap && globalMetrics.btcDominance
+        ? Math.max(0, 100 - globalMetrics.btcDominance - (globalMetrics.ethDominance ?? 0)) * 0.27
+        : todayEntry.usdtDominance;
     }
   }
 
