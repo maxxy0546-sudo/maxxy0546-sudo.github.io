@@ -1287,6 +1287,13 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
       usdtDominance,
     };
 
+    // Debug: log the data used for Ultra6/OB1 computation
+    const btcClose = macroData.btcPrice?.at(-1) ?? 0;
+    const btcSMA50 = macroData.btcPrice?.length >= 50
+      ? macroData.btcPrice.slice(-50).reduce((a, b) => a + b, 0) / 50
+      : 0;
+    console.log(`  ℹ Ultra6 debug: btcPrice.length=${macroData.btcPrice?.length}, btcClose=$${btcClose.toFixed(0)}, sma50=$${btcSMA50.toFixed(0)}, U3=${btcClose > btcSMA50}, ethBtcRatio.length=${macroData.ethBtcRatio?.length}, btcVolume.length=${macroData.btcVolume?.length}`);
+
     const ultra6 = regimeSignals.computeUltra6(
       macroData, growthNowcast.nowcast, growthNowcast.meZ, quadrant, liquidityLabel
     );
