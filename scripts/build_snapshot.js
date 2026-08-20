@@ -621,18 +621,30 @@ async function fetchBinanceOI() {
 async function fetchCoinGeckoHistorical() {
   console.log('── CoinGecko historical (BTC/ETH/global) ──');
   try {
-    const [btcRes, ethRes, globalRes] = await Promise.all([
+    // Use Promise.allSettled instead of Promise.all so that if ONE endpoint
+    // fails (e.g. /global/market_cap_chart returns 401 requiring paid plan),
+    // we still get the BTC + ETH data from the other endpoints.
+    const [btcResult, ethResult, globalResult] = await Promise.allSettled([
       fetchJson('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=daily'),
       fetchJson('https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=365&interval=daily'),
       fetchJson('https://api.coingecko.com/api/v3/global/market_cap_chart?vs_currency=usd&days=365'),
     ]);
+
+    const btcRes = btcResult.status === 'fulfilled' ? btcResult.value : {};
+    const ethRes = ethResult.status === 'fulfilled' ? ethResult.value : {};
+    const globalRes = globalResult.status === 'fulfilled' ? globalResult.value : {};
+
+    if (globalResult.status === 'rejected') {
+      console.log('  ⚠ CoinGecko global chart unavailable (likely 401 — paid plan required), continuing with BTC/ETH only');
+    }
 
     const btcPrices = (btcRes.prices || []).map(p => p[1]);
     const btcVolumes = (btcRes.total_volumes || []).map(v => v[1]);
     const ethPrices = (ethRes.prices || []).map(p => p[1]);
     const ethBtcRatio = btcPrices.map((btc, i) => btc > 0 ? (ethPrices[i] || 0) / btc : 0);
 
-    // Compute dominance from global market cap chart
+    // Compute dominance from global market cap chart (may be empty if
+    // the /global/market_cap_chart endpoint returned 401)
     const globalMcaps = globalRes.market_cap_by_currency?.usd || globalRes.market_caps || [];
     const btcMcaps = (btcRes.market_caps || []).map(m => m[1]);
     const ethMcaps = (ethRes.market_caps || []).map(m => m[1]);
@@ -1189,44 +1201,63 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
     let btcDominance = cgHistorical?.btcDominance || [];
     let usdtDominance = cgHistorical?.usdtDominance || [];
 
-    // If CoinGecko historical failed (rate-limited), fetch from Binance as fallback
+    // If CoinGecko historical failed (rate-limited or 401 on global chart),
+    // fetch from OKX as fallback. OKX is not geo-blocked from GitHub Actions
+    // (unlike Binance fapi which returns HTTP 451 from US servers).
     if (btcPrice.length < 50) {
-      console.log('  ⚠ CoinGecko historical unavailable for regime — using Binance klines fallback');
+      console.log('  ⚠ CoinGecko historical unavailable for regime — using OKX klines fallback');
       try {
-        const [btcKlines, ethKlines] = await Promise.all([
-          fetchJson('https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1d&limit=365'),
-          fetchJson('https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1d&limit=365'),
-        ]);
-        if (Array.isArray(btcKlines) && btcKlines.length >= 50) {
-          btcPrice = btcKlines.map(k => parseFloat(k[4])); // close price
-          btcVolume = btcKlines.map(k => parseFloat(k[5]));
-          console.log(`  ✓ Binance fallback: BTC ${btcPrice.length} daily closes (last: $${btcPrice[btcPrice.length - 1].toFixed(0)})`);
+        // OKX SWAP perps: /api/v5/market/candles returns up to 300 candles
+        // per call. We need 365 for the 200-MA + z-score lookbacks.
+        // Make 2 calls with different "before" timestamps to get 600 candles,
+        // then take the last 365.
+        async function fetchOkxAll(instId, limit = 365) {
+          const url1 = `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=1D&limit=300`;
+          const res1 = await fetchJson(url1);
+          if (!res1?.data?.length) return [];
+          const candles1 = res1.data.reverse(); // OKX returns newest-first
+          // Get older candles using the oldest timestamp as "before"
+          if (candles1.length >= 300 && limit > 300) {
+            const oldestTs = candles1[0][0];
+            const url2 = `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=1D&limit=300&before=${oldestTs}`;
+            try {
+              const res2 = await fetchJson(url2);
+              if (res2?.data?.length) {
+                const candles2 = res2.data.reverse();
+                return [...candles2, ...candles1].slice(-limit);
+              }
+            } catch {}
+          }
+          return candles1.slice(-limit);
         }
-        if (Array.isArray(ethKlines) && ethKlines.length >= 50) {
-          ethPrice = ethKlines.map(k => parseFloat(k[4]));
-          // Compute ETH/BTC ratio
+
+        const [btcCandles, ethCandles] = await Promise.all([
+          fetchOkxAll('BTC-USDT-SWAP'),
+          fetchOkxAll('ETH-USDT-SWAP'),
+        ]);
+
+        if (btcCandles.length >= 50) {
+          btcPrice = btcCandles.map(k => parseFloat(k[4])); // close
+          btcVolume = btcCandles.map(k => parseFloat(k[5]));
+          console.log(`  ✓ OKX fallback: BTC ${btcPrice.length} daily closes (last: $${btcPrice[btcPrice.length - 1].toFixed(0)})`);
+        }
+        if (ethCandles.length >= 50) {
+          ethPrice = ethCandles.map(k => parseFloat(k[4]));
           const minLen = Math.min(btcPrice.length, ethPrice.length);
           ethBtcRatio = [];
           for (let i = 0; i < minLen; i++) {
             ethBtcRatio.push(btcPrice[i] > 0 ? ethPrice[i] / btcPrice[i] : 0);
           }
-          console.log(`  ✓ Binance fallback: ETH ${ethPrice.length} daily closes`);
+          console.log(`  ✓ OKX fallback: ETH ${ethPrice.length} daily closes`);
         }
-        // Use global_metrics for current dominance (no historical series from Binance,
-        // but better than empty — the signals that use dominance ROC will be skipped
-        // if the series is too short, which is acceptable)
+        // Approximate dominance from global_metrics (flat series — enables
+        // U6 to compute, though dominance ROC will be neutral)
         if (globalMetrics?.btcDominance) {
-          // Approximate a flat dominance series at the current value (enables
-          // U6_btcDomDecline to at least compute, though it'll be neutral)
           btcDominance = btcPrice.map(() => globalMetrics.btcDominance);
-          // USDT dominance: approximate from total - BTC - ETH
-          if (globalMetrics.totalMarketCap && globalMetrics.btcDominance) {
-            const usdtApprox = 8.0; // USDT is historically ~8% of total mcap
-            usdtDominance = btcPrice.map(() => usdtApprox);
-          }
+          usdtDominance = btcPrice.map(() => 8.0);
         }
       } catch (e) {
-        console.warn(`  ✗ Binance fallback failed: ${e.message}`);
+        console.warn(`  ✗ OKX fallback failed: ${e.message}`);
       }
     }
 
