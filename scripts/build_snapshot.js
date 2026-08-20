@@ -1204,7 +1204,11 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
     // If CoinGecko historical failed (rate-limited or 401 on global chart),
     // fetch from OKX as fallback. OKX is not geo-blocked from GitHub Actions
     // (unlike Binance fapi which returns HTTP 451 from US servers).
-    if (btcPrice.length < 50) {
+    // Check ALL critical series — even if BTC price is present, missing ETH
+    // or volume data would cause signals to be skipped.
+    const needsFallback = btcPrice.length < 50 || ethPrice.length < 50 ||
+      btcVolume.length < 50 || ethBtcRatio.length < 50;
+    if (needsFallback) {
       console.log('  ⚠ CoinGecko historical unavailable for regime — using OKX klines fallback');
       try {
         // OKX SWAP perps: /api/v5/market/candles returns up to 300 candles
@@ -1319,7 +1323,7 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
     };
 
     const ultra6 = regimeSignals.computeUltra6(
-      macroData, growthNowcast.nowcast, growthNowcast.meZ, quadrant, liquidityLabel
+      macroData, growthNowcast.nowcast, liquidityNowcast.meZ, quadrant, liquidityLabel
     );
     const ob1 = regimeSignals.computeOB1Signals(macroData);
     const core9Score = regimeSignals.computeCore9Score(macroData, growthSignals);
@@ -1424,6 +1428,24 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
 
     console.log(`  ✓ Regime history: ${merged.length} days (today: ${quadrant} | G:${growthLabel} I:${inflationLabel} L:${liquidityLabel} | U6:${ultra6.score}/6 OB1:${ob1.score}/6 ${allocation.status})`);
     console.log(`    Signals active: G:${growthSignals.length} I:${inflationSignals.length} L:${liquiditySignals.length} (total ${growthSignals.length + inflationSignals.length + liquiditySignals.length})`);
+
+    // Health check: warn if all Ultra6 signals are false (indicates input
+    // data failure — empty btcPrice, etc.). This catches the root cause of
+    // the original bug where CoinGecko rate-limiting caused all signals to
+    // compute as 0 > 0 = false.
+    const latestEntry = merged[merged.length - 1];
+    if (latestEntry?.ultra6_signals) {
+      const allFalse = Object.values(latestEntry.ultra6_signals).every(v => v === false);
+      if (allFalse) {
+        console.warn(`  ⚠ WARNING: All Ultra6 signals are false — possible input data failure (btcPrice.length=${macroData.btcPrice?.length}, ethPrice.length=${macroData.ethPrice?.length})`);
+      }
+      // Also warn if btcPrice is suspiciously short (< 50 means signals that
+      // need 50+ day lookbacks were skipped)
+      if ((macroData.btcPrice?.length || 0) < 50) {
+        console.warn(`  ⚠ WARNING: btcPrice series is too short (${macroData.btcPrice?.length || 0} entries) — BTC-dependent signals (U3, U4, U6, OB1) may be inaccurate`);
+      }
+    }
+
     return merged;
   } catch (e) {
     console.warn(`  ✗ Regime history computation failed: ${e.message}`);

@@ -113,9 +113,12 @@ export function computeInflationSignals(data) {
   }
 
   // I2: Gold Price ROC (YoY) - Key signal
-  if (goldPrice.length > 365) {
-    const goldYoY = yoyROC(goldPrice, 365);
-    signals.push({ name: 'Gold YoY', value: adaptiveZ(goldPrice, 90, 365), weight: 1.75, raw: goldYoY });
+  // Gold futures trade ~250 days/year, so we use 200 trading days as the
+  // YoY threshold (≈ 10 months of trading days, close enough for z-scoring).
+  // The yoyROC computes the return over the full lookback period.
+  if (goldPrice.length > 200) {
+    const goldYoY = yoyROC(goldPrice, Math.min(252, goldPrice.length - 1));
+    signals.push({ name: 'Gold YoY', value: adaptiveZ(goldPrice, 90, Math.min(252, goldPrice.length)), weight: 1.75, raw: goldYoY });
   }
 
   // I3: BTC Volatility as oil proxy

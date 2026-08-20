@@ -323,7 +323,7 @@ export default function MacroRegime() {
     const ultra6 = computeUltra6(
       { btcPrice, ethPrice, btcDominance, ethBtcRatio },
       growthNowcast.nowcast,
-      growthNowcast.meZ,
+      liquidityNowcast.meZ,
       quadrant,
       liquidity
     );
