@@ -1540,7 +1540,7 @@ async function main() {
     fetchTradfiSnapshot(),
     fetchFarsideETFFlows(),
     fetchFactorWatch(),
-    computeCryptoFactors(_prevSnapshot, cryptoUniverse),
+    computeCryptoFactors(_prevSnapshot, _prevSnapshot?.crypto_universe),
     fetchCoinGeckoHistorical(),
     fetchCryptoUniverse(),
     // fetchCMCTrending() — removed: CMC trending endpoints return 403 on free tier
