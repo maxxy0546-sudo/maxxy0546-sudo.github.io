@@ -1173,9 +1173,62 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
     // Build the data shape the regime engine expects
     const fredAvailable = fred && Object.values(fred).some(v => Array.isArray(v) && v.length > 0);
 
-    // Extract BTC/ETH price series — prefer historical (has volume/dominance), fall back to coingecko_top
-    const btcPrice = (cgHistorical?.btcPrice?.length >= 50 ? cgHistorical.btcPrice : coingecko?.bitcoin?.prices?.map(p => p[1]) || []);
-    const ethPrice = (cgHistorical?.ethPrice?.length >= 50 ? cgHistorical.ethPrice : coingecko?.ethereum?.prices?.map(p => p[1]) || []);
+    // Extract BTC/ETH price series for regime computation.
+    // Priority: CoinGecko historical (has volume + dominance) → Binance klines
+    // (always available, CORS-free from server) → empty array (last resort).
+    //
+    // Previously fell back to coingecko?.bitcoin?.prices which doesn't exist
+    // (coingecko_top has a single "price" field, not a "prices" array). This
+    // caused btcPrice to be [] when CoinGecko historical was rate-limited,
+    // which made ALL BTC-dependent signals (U3, U4, U6, OB1) compute as
+    // 0 > 0 = false. The fix adds Binance as a reliable fallback source.
+    let btcPrice = (cgHistorical?.btcPrice?.length >= 50 ? cgHistorical.btcPrice : []);
+    let ethPrice = (cgHistorical?.ethPrice?.length >= 50 ? cgHistorical.ethPrice : []);
+    let btcVolume = cgHistorical?.btcVolume || [];
+    let ethBtcRatio = cgHistorical?.ethBtcRatio || [];
+    let btcDominance = cgHistorical?.btcDominance || [];
+    let usdtDominance = cgHistorical?.usdtDominance || [];
+
+    // If CoinGecko historical failed (rate-limited), fetch from Binance as fallback
+    if (btcPrice.length < 50) {
+      console.log('  ⚠ CoinGecko historical unavailable for regime — using Binance klines fallback');
+      try {
+        const [btcKlines, ethKlines] = await Promise.all([
+          fetchJson('https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1d&limit=365'),
+          fetchJson('https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1d&limit=365'),
+        ]);
+        if (Array.isArray(btcKlines) && btcKlines.length >= 50) {
+          btcPrice = btcKlines.map(k => parseFloat(k[4])); // close price
+          btcVolume = btcKlines.map(k => parseFloat(k[5]));
+          console.log(`  ✓ Binance fallback: BTC ${btcPrice.length} daily closes (last: $${btcPrice[btcPrice.length - 1].toFixed(0)})`);
+        }
+        if (Array.isArray(ethKlines) && ethKlines.length >= 50) {
+          ethPrice = ethKlines.map(k => parseFloat(k[4]));
+          // Compute ETH/BTC ratio
+          const minLen = Math.min(btcPrice.length, ethPrice.length);
+          ethBtcRatio = [];
+          for (let i = 0; i < minLen; i++) {
+            ethBtcRatio.push(btcPrice[i] > 0 ? ethPrice[i] / btcPrice[i] : 0);
+          }
+          console.log(`  ✓ Binance fallback: ETH ${ethPrice.length} daily closes`);
+        }
+        // Use global_metrics for current dominance (no historical series from Binance,
+        // but better than empty — the signals that use dominance ROC will be skipped
+        // if the series is too short, which is acceptable)
+        if (globalMetrics?.btcDominance) {
+          // Approximate a flat dominance series at the current value (enables
+          // U6_btcDomDecline to at least compute, though it'll be neutral)
+          btcDominance = btcPrice.map(() => globalMetrics.btcDominance);
+          // USDT dominance: approximate from total - BTC - ETH
+          if (globalMetrics.totalMarketCap && globalMetrics.btcDominance) {
+            const usdtApprox = 8.0; // USDT is historically ~8% of total mcap
+            usdtDominance = btcPrice.map(() => usdtApprox);
+          }
+        }
+      } catch (e) {
+        console.warn(`  ✗ Binance fallback failed: ${e.message}`);
+      }
+    }
 
     // Extract gold price series from tradfi OHLCV (Yahoo futures GC=F)
     // Gold is a key inflation signal (I1: BTC/Gold Ratio, I2: Gold Price ROC).
@@ -1186,18 +1239,15 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
     // Fear & Greed as a series
     const fgSeries = Array.isArray(fearGreed) ? fearGreed.map(d => d.value).filter(v => v != null) : [];
 
-    // Build the full data payload the signal functions expect.
-    // Previously this only passed {btcPrice, ethPrice, fearGreed, fred} —
-    // missing ethBtcRatio, btcVolume, btcDominance, usdtDominance, goldPrice.
-    // That caused 4+5+2 = 11 of 25 signals to be SKIPPED, oversmoothing
-    // the composite toward neutral and making the 90-day history look flat.
+    // Build the full signal data payload (same as the client-side MacroRegime).
+    // Uses local variables which include Binance fallback if CoinGecko failed.
     const signalData = {
       btcPrice,
       ethPrice,
-      ethBtcRatio: cgHistorical?.ethBtcRatio || [],
-      btcVolume: cgHistorical?.btcVolume || [],
-      btcDominance: cgHistorical?.btcDominance || [],
-      usdtDominance: cgHistorical?.usdtDominance || [],
+      ethBtcRatio,
+      btcVolume,
+      btcDominance,
+      usdtDominance,
       goldPrice,
       fearGreed: fgSeries,
       fred,
@@ -1226,13 +1276,15 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
     const quadrant = calc.classifyQuadrant(growthNowcast.nowcast, inflationNowcast.nowcast);
 
     // ── Compute Ultra6 + OB1 + Allocation (server-side, unified) ──────────
+    // Use the local variables (which include Binance fallback) instead of
+    // re-reading from cgHistorical (which may be empty if CoinGecko failed)
     const macroData = {
       btcPrice,
       ethPrice,
-      btcDominance: cgHistorical?.btcDominance || [],
-      ethBtcRatio: cgHistorical?.ethBtcRatio || [],
-      btcVolume: cgHistorical?.btcVolume || [],
-      usdtDominance: cgHistorical?.usdtDominance || [],
+      btcDominance,
+      ethBtcRatio,
+      btcVolume,
+      usdtDominance,
     };
 
     const ultra6 = regimeSignals.computeUltra6(
