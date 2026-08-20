@@ -571,9 +571,13 @@ async function fetchBinanceOI() {
   // /public/funding-rate returns current funding rates for all SWAPs.
   // /market/tickers returns mark prices for OI→USD conversion.
   try {
-    const [oiRes, fundingRes, tickerRes] = await Promise.all([
+    // OKX /public/open-interest returns ALL SWAP instruments in one call.
+    // /market/tickers returns last prices for OI→USD conversion.
+    // Funding rates: OKX /public/funding-rate requires per-instrument calls,
+    // so we skip batch funding rates from OKX. The boardEngine falls back to
+    // Hyperliquid funding rates (which ARE available client-side).
+    const [oiRes, tickerRes] = await Promise.all([
       fetchJson('https://www.okx.com/api/v5/public/open-interest?instType=SWAP'),
-      fetchJson('https://www.okx.com/api/v5/public/funding-rate?instType=SWAP'),
       fetchJson('https://www.okx.com/api/v5/market/tickers?instType=SWAP'),
     ]);
 
@@ -582,13 +586,6 @@ async function fetchBinanceOI() {
       const priceMap = new Map();
       for (const t of tickerRes.data) {
         priceMap.set(t.instId, parseFloat(t.last || '0'));
-      }
-      // Build funding rate map
-      const fundingMap = new Map();
-      if (fundingRes?.data) {
-        for (const f of fundingRes.data) {
-          fundingMap.set(f.instId, parseFloat(f.fundingRate || '0'));
-        }
       }
       // Process OI — only USDT-quoted SWAPs
       for (const oi of oiRes.data) {
@@ -600,7 +597,7 @@ async function fetchBinanceOI() {
         const oiCoin = parseFloat(oi.oi || '0');
         const price = priceMap.get(instId) ?? 0;
         const oiUsd = oiCoin * price;
-        const fundingRate = fundingMap.get(instId) ?? null;
+        const fundingRate = null; // OKX funding rates require per-instrument calls; skipped
         if (oiUsd > 0) {
           out[base] = { oiUsd, oiCoin, fundingRate };
         }
@@ -1550,7 +1547,7 @@ async function main() {
 
   // CMC trending endpoints return 403 on free tier — skip to save API credits.
   // The cmc_trending key is preserved from previous snapshots (stale but harmless).
-  const cmcTrending = _prevSnapshot?.cmc_trending || { trending: [], gainers: [], losers: [], mostVisited: [], community: [] };
+  let cmcTrending = _prevSnapshot?.cmc_trending || { trending: [], gainers: [], losers: [], mostVisited: [], community: [] };
 
   // If crypto_universe is empty (CMC + CoinGecko both failed), reuse previous snapshot's
   if ((!cryptoUniverse || Object.keys(cryptoUniverse).length < 400) && _prevSnapshot?.crypto_universe) {
