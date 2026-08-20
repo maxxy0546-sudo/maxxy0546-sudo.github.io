@@ -1528,7 +1528,7 @@ async function main() {
   // Log CMC credit usage at start (FREE — 0 credits) so we see budget before/after
   await logCMCCreditUsage();
 
-  let [fred, coingecko, fearGreed, kenFrench, vixRealtime, tradfiOHLCV, etfFlows, factorWatch, cryptoFactors, cgHistorical, cryptoUniverse, _cmcTrending, globalMetrics, binanceOI] = await Promise.all([
+  let [fred, coingecko, fearGreed, kenFrench, vixRealtime, tradfiOHLCV, etfFlows, factorWatch, cryptoFactors, cgHistorical, cryptoUniverse, globalMetrics, binanceOI] = await Promise.all([
     fetchAllFred(),
     fetchCoinGeckoTop(),
     fetchFearGreed(),
