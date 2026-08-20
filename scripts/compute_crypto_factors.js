@@ -29,10 +29,33 @@ import { fetchWithTimeout } from '../src/lib/scanner/fetchWithTimeout.js';
 const FACTORS = ['momentum', 'size', 'volatility', 'beta', 'liquidity'];
 
 /**
- * Fetch top 100 crypto by market cap from CoinGecko.
- * Reuses the same endpoint as the client-side coingecko.js source.
+ * Fetch top 100 crypto by market cap.
+ * Primary: CMC crypto_universe (already fetched by build_snapshot.js, no extra API call).
+ * Fallback: CoinGecko /coins/markets (may be rate-limited).
+ *
+ * @param {object} cryptoUniverse - The snapshot's crypto_universe object (from CMC).
+ *   If provided, uses it instead of making a separate API call.
  */
-async function fetchTopCryptoByMcap(limit = 100) {
+async function fetchTopCryptoByMcap(limit = 100, cryptoUniverse = null) {
+  // Primary: use CMC crypto_universe if provided (no extra API call)
+  if (cryptoUniverse && typeof cryptoUniverse === 'object') {
+    const coins = Object.values(cryptoUniverse)
+      .filter(c => c && c.symbol && c.marketCap > 0)
+      .sort((a, b) => (a.marketCapRank || 999) - (b.marketCapRank || 999))
+      .slice(0, limit)
+      .map(c => ({
+        symbol: c.symbol.toUpperCase(),
+        marketCap: c.marketCap || 0,
+        volume24h: c.volume24h || 0,
+      }));
+    if (coins.length >= 50) {
+      console.log(`  ✓ CMC crypto_universe: ${coins.length} coins (no extra API call)`);
+      return coins;
+    }
+    console.log(`  ⚠ CMC crypto_universe only ${coins.length} coins, trying CoinGecko`);
+  }
+
+  // Fallback: CoinGecko /coins/markets
   const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=' + limit + '&page=1&sparkline=false';
   try {
     const res = await fetchWithTimeout(url, {
@@ -129,11 +152,11 @@ async function fetchCryptoCandles(symbol, limit = 365) {
  * @param {object} prevSnapshot - previous snapshot (for history accumulation)
  * @returns {Promise<object|null>} factor data or null on failure
  */
-export async function computeCryptoFactors(prevSnapshot) {
+export async function computeCryptoFactors(prevSnapshot, cryptoUniverse = null) {
   console.log('  Computing crypto factors...');
 
-  // 1. Fetch top 100 by market cap
-  const topCoins = await fetchTopCryptoByMcap(100);
+  // 1. Fetch top 100 by market cap — pass cryptoUniverse from CMC snapshot
+  const topCoins = await fetchTopCryptoByMcap(100, cryptoUniverse || prevSnapshot?.crypto_universe);
   if (topCoins.length < 20) {
     console.warn('  ⚠ Crypto factors: not enough market data');
     return null;

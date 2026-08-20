@@ -274,12 +274,16 @@ export function computeOB1Signals(data) {
     ethPrice = [],
     btcPrice = [],
     btcVolume = [],
+    ethVolume = [],   // ETH volume (may be empty if source doesn't provide it)
     usdtDominance = [],
     ethBtcRatio = [],
   } = data;
 
-  // OBV for ETH (proxy for total3es)
-  const ethObv = computeOBV(ethPrice, btcVolume);
+  // OBV for ETH using ETH volume (falls back to BTC volume as proxy if
+  // ETH volume is not available — e.g. when using OKX fallback which only
+  // fetches BTC + ETH prices but may not have ETH volume)
+  const obvVolume = ethVolume.length >= ethPrice.length ? ethVolume : btcVolume;
+  const ethObv = computeOBV(ethPrice, obvVolume);
   const obvSlope13 = ethObv.length > 14 ? ethObv.at(-1) - ethObv.at(-14) : 0;
 
   // Volume acceleration
@@ -365,7 +369,35 @@ export function computeCore8Score(ultra6) {
 }
 
 export function computeCore9Score(data, growthSignals) {
-  // Core9 = Ultra6 + additional quality signals
-  const base = growthSignals.filter(s => s.value > 0).length;
-  return Math.min(9, base + 3); // Simplified: base + BTC momentum
+  // Core9 = 9 quality signals:
+  //   1-6: Ultra6 signals (macro, liquidity, BTC>50MA, ETH/BTC, growth, BTC dom)
+  //   7:   BTC above 200MA (long-term trend confirmation)
+  //   8:   Positive 5D return (short-term momentum)
+  //   9:   Positive growth signal count ≥ 3 (breadth of growth)
+  const { btcPrice = [] } = data;
+
+  // Signal 7: BTC above 200-day MA
+  let btcAbove200 = false;
+  if (btcPrice.length >= 200) {
+    const btc200MA = sma(btcPrice, 200);
+    btcAbove200 = (btcPrice.at(-1) ?? 0) > btc200MA;
+  }
+
+  // Signal 8: Positive 5-day return
+  let pos5dReturn = false;
+  if (btcPrice.length >= 6) {
+    const ret5d = btcPrice.at(-1) / btcPrice.at(-6) - 1;
+    pos5dReturn = ret5d > 0;
+  }
+
+  // Signal 9: At least 3 positive growth signals (breadth)
+  const positiveGrowthCount = growthSignals.filter(s => s.value > 0).length;
+  const broadGrowth = positiveGrowthCount >= 3;
+
+  // Count Ultra6 signals (recomputed from data since we don't have the object)
+  // Use the growth signals' positive count as a proxy for Ultra6 quality
+  const ultra6Proxy = Math.min(6, positiveGrowthCount + 2);
+
+  // Total: Ultra6 proxy (0-6) + BTC>200MA (0-1) + pos5d (0-1) + broadGrowth (0-1)
+  return Math.min(9, ultra6Proxy + (btcAbove200 ? 1 : 0) + (pos5dReturn ? 1 : 0) + (broadGrowth ? 1 : 0));
 }

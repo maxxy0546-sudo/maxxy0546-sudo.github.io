@@ -556,60 +556,110 @@ async function fetchCryptoUniverse() {
 // Also fetches /fapi/v1/premiumIndex (1 call, all symbols) for funding rates.
 //
 // Returns: { SYMBOL: { oiUsd, oiCoin, fundingRate } }
+//
+// Primary: OKX SWAP perps (not geo-blocked from GitHub Actions).
+// Fallback: Binance fapi (may be geo-blocked with HTTP 451 from US servers).
+//
+// OKX provides OI + funding rate in a single batch call (/public/open-interest),
+// making it much more efficient than Binance's per-symbol approach.
 async function fetchBinanceOI() {
-  console.log('── Binance Futures OI (server-side batch) ──');
+  console.log('── Futures OI (OKX primary, Binance fallback) ──');
   const out = {};
+
+  // ── Primary: OKX SWAP perps ──
+  // OKX /public/open-interest returns ALL SWAP instruments in one call.
+  // /public/funding-rate returns current funding rates for all SWAPs.
+  // /market/tickers returns mark prices for OI→USD conversion.
   try {
-    // 1. Get all USDT perp symbols
-    const exchangeInfo = await fetchJson('https://fapi.binance.com/fapi/v1/exchangeInfo');
-    const perpSymbols = (exchangeInfo.symbols || [])
-      .filter(s => s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT' && s.status === 'TRADING')
-      .map(s => ({ base: s.baseAsset, symbol: s.symbol }));
-    console.log(`  Found ${perpSymbols.length} USDT perp symbols`);
+    const [oiRes, fundingRes, tickerRes] = await Promise.all([
+      fetchJson('https://www.okx.com/api/v5/public/open-interest?instType=SWAP'),
+      fetchJson('https://www.okx.com/api/v5/public/funding-rate?instType=SWAP'),
+      fetchJson('https://www.okx.com/api/v5/market/tickers?instType=SWAP'),
+    ]);
 
-    // 2. Get funding rates + mark prices for all symbols (1 batch call)
-    const premiumIndex = await fetchJson('https://fapi.binance.com/fapi/v1/premiumIndex');
-    const fundingMap = new Map();
-    for (const p of premiumIndex) {
-      fundingMap.set(p.symbol, {
-        fundingRate: parseFloat(p.lastFundingRate || '0'),
-        markPrice: parseFloat(p.markPrice || '0'),
-      });
-    }
-
-    // 3. Fetch OI per symbol in parallel batches (20 concurrent)
-    const BATCH_SIZE = 20;
-    let completed = 0;
-    for (let i = 0; i < perpSymbols.length; i += BATCH_SIZE) {
-      const batch = perpSymbols.slice(i, i + BATCH_SIZE);
-      const results = await Promise.allSettled(
-        batch.map(async ({ base, symbol }) => {
-          const res = await fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`);
-          if (!res.ok) return null;
-          const d = await res.json();
-          const oiCoin = parseFloat(d.openInterest || '0');
-          const pi = fundingMap.get(symbol);
-          const markPrice = pi?.markPrice ?? 0;
-          const fundingRate = pi?.fundingRate ?? null;
-          return { base, oiCoin, oiUsd: oiCoin * markPrice, fundingRate };
-        })
-      );
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value && r.value.oiUsd > 0) {
-          out[r.value.base] = {
-            oiUsd: r.value.oiUsd,
-            oiCoin: r.value.oiCoin,
-            fundingRate: r.value.fundingRate,
-          };
+    if (oiRes?.data && tickerRes?.data) {
+      // Build price map from tickers
+      const priceMap = new Map();
+      for (const t of tickerRes.data) {
+        priceMap.set(t.instId, parseFloat(t.last || '0'));
+      }
+      // Build funding rate map
+      const fundingMap = new Map();
+      if (fundingRes?.data) {
+        for (const f of fundingRes.data) {
+          fundingMap.set(f.instId, parseFloat(f.fundingRate || '0'));
         }
       }
-      completed += batch.length;
-      if (completed % 100 < BATCH_SIZE) console.log(`  Binance OI: ${completed}/${perpSymbols.length} fetched`);
+      // Process OI — only USDT-quoted SWAPs
+      for (const oi of oiRes.data) {
+        const instId = oi.instId || '';
+        // Format: BTC-USDT-SWAP → extract base asset "BTC"
+        const parts = instId.split('-');
+        if (parts.length < 3 || parts[1] !== 'USDT') continue;
+        const base = parts[0];
+        const oiCoin = parseFloat(oi.oi || '0');
+        const price = priceMap.get(instId) ?? 0;
+        const oiUsd = oiCoin * price;
+        const fundingRate = fundingMap.get(instId) ?? null;
+        if (oiUsd > 0) {
+          out[base] = { oiUsd, oiCoin, fundingRate };
+        }
+      }
+      console.log(`  ✓ OKX OI: ${Object.keys(out).length} assets with OI data`);
     }
-    console.log(`  ✓ Binance OI: ${Object.keys(out).length} assets with OI data`);
   } catch (e) {
-    console.warn(`  ✗ Binance OI failed: ${e.message}`);
+    console.warn(`  ✗ OKX OI failed: ${e.message}`);
   }
+
+  // ── Fallback: Binance fapi (if OKX returned < 50 assets) ──
+  if (Object.keys(out).length < 50) {
+    console.log('  ⚠ OKX OI insufficient, trying Binance fallback...');
+    try {
+      const exchangeInfo = await fetchJson('https://fapi.binance.com/fapi/v1/exchangeInfo');
+      const perpSymbols = (exchangeInfo.symbols || [])
+        .filter(s => s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT' && s.status === 'TRADING')
+        .map(s => ({ base: s.baseAsset, symbol: s.symbol }));
+
+      const premiumIndex = await fetchJson('https://fapi.binance.com/fapi/v1/premiumIndex');
+      const fundingMap = new Map();
+      for (const p of premiumIndex) {
+        fundingMap.set(p.symbol, {
+          fundingRate: parseFloat(p.lastFundingRate || '0'),
+          markPrice: parseFloat(p.markPrice || '0'),
+        });
+      }
+
+      const BATCH_SIZE = 20;
+      for (let i = 0; i < perpSymbols.length; i += BATCH_SIZE) {
+        const batch = perpSymbols.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map(async ({ base, symbol }) => {
+            const res = await fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`);
+            if (!res.ok) return null;
+            const d = await res.json();
+            const oiCoin = parseFloat(d.openInterest || '0');
+            const pi = fundingMap.get(symbol);
+            const markPrice = pi?.markPrice ?? 0;
+            const fundingRate = pi?.fundingRate ?? null;
+            return { base, oiCoin, oiUsd: oiCoin * markPrice, fundingRate };
+          })
+        );
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value && r.value.oiUsd > 0 && !out[r.value.base]) {
+            out[r.value.base] = {
+              oiUsd: r.value.oiUsd,
+              oiCoin: r.value.oiCoin,
+              fundingRate: r.value.fundingRate,
+            };
+          }
+        }
+      }
+      console.log(`  ✓ Binance OI fallback: ${Object.keys(out).length} total assets`);
+    } catch (e) {
+      console.warn(`  ✗ Binance OI fallback failed: ${e.message}`);
+    }
+  }
+
   return out;
 }
 
@@ -1254,11 +1304,26 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
           }
           console.log(`  ✓ OKX fallback: ETH ${ethPrice.length} daily closes`);
         }
-        // Approximate dominance from global_metrics (flat series — enables
-        // U6 to compute, though dominance ROC will be neutral)
-        if (globalMetrics?.btcDominance) {
+        // Use accumulated dominance history (from snapshot.dominance_history)
+        // instead of a flat approximation. This enables U6_btcDomDecline and
+        // OB1_usdtDomFalling to compute meaningful ROC values.
+        const domHistory = _prevSnapshot?.dominance_history || [];
+        if (domHistory.length >= 10) {
+          // Map dominance history to the price array length (use last N entries)
+          const domSlice = domHistory.slice(-btcPrice.length);
+          btcDominance = domSlice.map(h => h.btcDominance ?? globalMetrics.btcDominance ?? 58);
+          usdtDominance = domSlice.map(h => h.usdtDominance ?? 8.0);
+          // Pad if dominance history is shorter than price history
+          while (btcDominance.length < btcPrice.length) {
+            btcDominance.unshift(btcDominance[0] ?? 58);
+            usdtDominance.unshift(usdtDominance[0] ?? 8.0);
+          }
+          console.log(`  ✓ Dominance from history: ${domHistory.length} days (btcDom ROC will compute)`);
+        } else if (globalMetrics?.btcDominance) {
+          // No history yet — use flat approximation (U6/OB1_usdtDomFalling will be neutral)
           btcDominance = btcPrice.map(() => globalMetrics.btcDominance);
           usdtDominance = btcPrice.map(() => 8.0);
+          console.log('  ⚠ Dominance: no history, using flat approximation');
         }
       } catch (e) {
         console.warn(`  ✗ OKX fallback failed: ${e.message}`);
@@ -1466,7 +1531,7 @@ async function main() {
   // Log CMC credit usage at start (FREE — 0 credits) so we see budget before/after
   await logCMCCreditUsage();
 
-  let [fred, coingecko, fearGreed, kenFrench, vixRealtime, tradfiOHLCV, etfFlows, factorWatch, cryptoFactors, cgHistorical, cryptoUniverse, cmcTrending, globalMetrics, binanceOI] = await Promise.all([
+  let [fred, coingecko, fearGreed, kenFrench, vixRealtime, tradfiOHLCV, etfFlows, factorWatch, cryptoFactors, cgHistorical, cryptoUniverse, _cmcTrending, globalMetrics, binanceOI] = await Promise.all([
     fetchAllFred(),
     fetchCoinGeckoTop(),
     fetchFearGreed(),
@@ -1475,13 +1540,17 @@ async function main() {
     fetchTradfiSnapshot(),
     fetchFarsideETFFlows(),
     fetchFactorWatch(),
-    computeCryptoFactors(_prevSnapshot),
+    computeCryptoFactors(_prevSnapshot, cryptoUniverse),
     fetchCoinGeckoHistorical(),
     fetchCryptoUniverse(),
-    fetchCMCTrending(),
+    // fetchCMCTrending() — removed: CMC trending endpoints return 403 on free tier
     fetchGlobalMetrics(),
     fetchBinanceOI(),
   ]);
+
+  // CMC trending endpoints return 403 on free tier — skip to save API credits.
+  // The cmc_trending key is preserved from previous snapshots (stale but harmless).
+  const cmcTrending = _prevSnapshot?.cmc_trending || { trending: [], gainers: [], losers: [], mostVisited: [], community: [] };
 
   // If crypto_universe is empty (CMC + CoinGecko both failed), reuse previous snapshot's
   if ((!cryptoUniverse || Object.keys(cryptoUniverse).length < 400) && _prevSnapshot?.crypto_universe) {
@@ -1644,6 +1713,34 @@ async function main() {
     signalHistory = _prevSnapshot?.signal_history || [];
   }
 
+  // ── Accumulate dominance history for regime signals ────────────────────
+  // When CoinGecko historical fails (rate-limited), the regime computation
+  // falls back to OKX klines which don't provide BTC/USDT dominance series.
+  // Without dominance history, U6_btcDomDecline and OB1_usdtDomFalling
+  // always compute as false (flat series → pctROC = 0).
+  //
+  // Fix: accumulate daily dominance values from global_metrics (CMC) into
+  // a rolling 90-day array stored in snapshot.dominance_history. When the
+  // CoinGecko historical fails, the regime computation can use this history
+  // instead of a flat approximation.
+  let dominanceHistory = _prevSnapshot?.dominance_history || [];
+  if (globalMetrics?.btcDominance) {
+    const today = new Date().toISOString().slice(0, 10);
+    const hasToday = dominanceHistory.some(h => h.date === today);
+    if (!hasToday) {
+      dominanceHistory.push({
+        date: today,
+        btcDominance: globalMetrics.btcDominance,
+        ethDominance: globalMetrics.ethDominance ?? null,
+        // USDT dominance: total - BTC - ETH, then estimate USDT share
+        usdtDominance: globalMetrics.totalMarketCap && globalMetrics.btcDominance
+          ? Math.max(0, 100 - globalMetrics.btcDominance - (globalMetrics.ethDominance ?? 0)) * 0.27
+          : 8.0,
+      });
+      dominanceHistory = dominanceHistory.slice(-90); // cap at 90 days
+    }
+  }
+
   // Small snapshot — loaded by every page (FRED proxy, CoinGecko fallback,
   // Fear&Greed, Ken French seasonality, CBOE put/call, ETF flows, FactorWatch,
   // crypto factors, signal metrics). Keeping this lean is critical for first paint.
@@ -1666,6 +1763,7 @@ async function main() {
     crypto_factor_history: cryptoFactors?.factorHistory || [],
     crypto_factor_spread_history: cryptoFactors?.spreadHistory || [],
     regime_history: regimeHistory,
+    dominance_history: dominanceHistory,
     tradfi_breadth_history: tradfiBreadthHistory,
     signal_metrics: signalMetrics,
     signal_history: signalHistory,
