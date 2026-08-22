@@ -170,7 +170,7 @@ function HorizonStrip({ horizon }) {
 }
 
 function AssetCard({ symbol, name, verdict, confidence, drivers, horizon }) {
-  const [showTooltip, setShowTooltip] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const color = verdictColor(verdict);
   const icon = verdictIcon(verdict);
 
@@ -204,26 +204,62 @@ function AssetCard({ symbol, name, verdict, confidence, drivers, horizon }) {
         <span className="text-[10px] font-semibold" style={{ color: 'var(--scanner-text2)' }}>
           Confidence: {confidence}/10
         </span>
-        <span
-          className="text-[9px] cursor-help"
-          style={{ color: 'var(--scanner-text3)', textDecoration: 'underline dotted' }}
-          onMouseEnter={() => setShowTooltip(true)}
-          onMouseLeave={() => setShowTooltip(false)}
-          onClick={() => setShowTooltip(!showTooltip)}
-        >(?)</span>
-        {showTooltip && (
-          <div className="fixed inset-0 z-50" onClick={() => setShowTooltip(false)}>
-            <div className="absolute p-2 rounded text-[9px] leading-relaxed" style={{
-              background: 'var(--scanner-bg2)', border: '1px solid var(--scanner-border2)',
-              color: 'var(--scanner-text2)', maxWidth: 200, left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: '90vw',
-            }}>
-              {driverLines.map((line, i) => <div key={i}>{line}</div>)}
-              {driverLines.length === 0 && <div>No driver data</div>}
-            </div>
-          </div>
-        )}
+        <button
+          className="text-[9px] cursor-pointer"
+          style={{ color: 'var(--scanner-text3)', textDecoration: 'underline dotted', background: 'none', border: 'none', padding: 0 }}
+          onClick={() => setShowDetails(true)}
+        >
+          (?)
+        </button>
       </div>
       {horizon && <HorizonStrip horizon={horizon} />}
+
+      {/* Click-to-open details popup */}
+      {showDetails && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setShowDetails(false)}
+        >
+          <div
+            className="relative rounded-lg p-4"
+            style={{
+              background: 'var(--scanner-bg2)',
+              border: '1px solid var(--scanner-border2)',
+              color: 'var(--scanner-text2)',
+              maxWidth: 360,
+              width: '90vw',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setShowDetails(false)}
+              className="absolute top-2 right-2 text-[16px] leading-none"
+              style={{ color: 'var(--scanner-text3)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px' }}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            {/* Header */}
+            <div className="text-[12px] font-bold mb-3" style={{ color: 'var(--scanner-text)' }}>
+              {symbol} · {name}
+            </div>
+            {/* Verdict + confidence */}
+            <div className="text-[10px] mb-3" style={{ color }}>
+              Verdict: {verdict} · Confidence: {confidence}/10
+            </div>
+            {/* Driver details */}
+            <div className="text-[10px] leading-relaxed space-y-1">
+              {driverLines.length > 0 ? (
+                driverLines.map((line, i) => <div key={i}>· {line}</div>)
+              ) : (
+                <div style={{ color: 'var(--scanner-text3)' }}>No driver data available</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
