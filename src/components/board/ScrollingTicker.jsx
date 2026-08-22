@@ -32,6 +32,7 @@ const TICKER_INST_IDS = [
   { instId: 'LIT-USDT-SWAP',   symbol: 'LIT',  label: 'LIT',   category: 'crypto' },
   { instId: 'PUMP-USDT-SWAP',  symbol: 'PUMP', label: 'PUMP',  category: 'crypto' },
   { instId: 'AAVE-USDT-SWAP',  symbol: 'AAVE', label: 'AAVE',  category: 'crypto' },
+  { instId: 'ZEC-USDT-SWAP',   symbol: 'ZEC',  label: 'ZEC',   category: 'crypto' },
   { instId: 'NEAR-USDT-SWAP',  symbol: 'NEAR', label: 'NEAR',  category: 'crypto' },
   { instId: 'DOGE-USDT-SWAP',  symbol: 'DOGE', label: 'DOGE',  category: 'crypto' },
   { instId: 'SPY-USDT-SWAP',  symbol: 'SPY',  label: 'SPY',   category: 'index'  },
