@@ -1856,56 +1856,55 @@ function computeFactorUniverse(tradfiOHLCV) {
       const basketRows = [];
 
       for (const [basketName, tickers] of Object.entries(baskets)) {
-        let totalDollarVol1d = 0;
-        let totalDollarVol30d = 0;
-        let totalDollarVolStd30d = 0;
-        let count30d = 0;
-        let totalRet1d = 0;
-        let validCount = 0;
+        // Build basket-level daily $-vol series: for each day, sum $-vol across
+        // all basket members. This gives a single time series for the basket
+        // as a whole, which we then z-score.
+        const memberDollarVols = {}; // ticker → array of daily $-vol
+        let maxLen = 0;
 
         for (const ticker of tickers) {
           const candles = tradfiOHLCV?.[ticker];
           if (!candles || candles.length < 31) continue;
+          const dvs = candles.map(c => c.c * c.v);
+          memberDollarVols[ticker] = dvs;
+          maxLen = Math.max(maxLen, dvs.length);
+        }
 
-          const closes = candles.map(c => c.c);
-          const vols = candles.map(c => c.v);
-          const n = closes.length;
+        if (maxLen < 31) continue;
 
-          const dollarVols = [];
-          for (let i = 0; i < n; i++) dollarVols.push(closes[i] * vols[i]);
+        // Build basket-level daily $-vol series (aligned by index from the end)
+        const basketDailyVol = new Array(maxLen).fill(0);
+        let totalRet1d = 0;
+        let validCount = 0;
 
-          totalDollarVol1d += dollarVols[n - 1] || 0;
-
-          // 30D average + std (excluding today)
-          const trailing30 = dollarVols.slice(-31, -1);
-          if (trailing30.length > 0) {
-            const avg30 = trailing30.reduce((s, v) => s + v, 0) / trailing30.length;
-            totalDollarVol30d += avg30;
-            // Compute std for true z-score
-            const variance = trailing30.reduce((s, v) => s + (v - avg30) ** 2, 0) / trailing30.length;
-            totalDollarVolStd30d += Math.sqrt(variance);
-            count30d++;
+        for (const [ticker, dvs] of Object.entries(memberDollarVols)) {
+          // Align from the end (most recent day is at index maxLen-1)
+          const offset = maxLen - dvs.length;
+          for (let i = 0; i < dvs.length; i++) {
+            basketDailyVol[offset + i] += dvs[i];
           }
-
-          // 1D return
-          if (n >= 2 && closes[n-2] > 0) {
-            totalRet1d += (closes[n-1] / closes[n-2] - 1);
+          // 1D return (for display)
+          const candles = tradfiOHLCV[ticker];
+          const closes = candles.map(c => c.c);
+          if (closes.length >= 2 && closes[closes.length - 2] > 0) {
+            totalRet1d += (closes[closes.length - 1] / closes[closes.length - 2] - 1);
             validCount++;
           }
         }
 
-        // Flow z: true z-score = (today - mean) / std
-        // Aggregate across basket members (sum the $-vol, then z-score the basket total)
+        // Today's basket $-vol
+        const totalDollarVol1d = basketDailyVol[maxLen - 1];
+
+        // 30D average + std (excluding today)
+        const trailing30 = basketDailyVol.slice(-31, -1);
+        const avg30 = trailing30.reduce((s, v) => s + v, 0) / trailing30.length;
+        const variance = trailing30.reduce((s, v) => s + (v - avg30) ** 2, 0) / trailing30.length;
+        const std30 = Math.sqrt(variance);
+
+        // Flow z: true z-score at the BASKET level
         let flowZ = null;
-        if (count30d > 0 && totalDollarVol30d > 0) {
-          const avgBasketVol = totalDollarVol30d / count30d;
-          const stdBasketVol = totalDollarVolStd30d / count30d;
-          if (stdBasketVol > 0) {
-            flowZ = (totalDollarVol1d - avgBasketVol) / stdBasketVol;
-          } else {
-            // Fallback to ratio if std is 0 (shouldn't happen with real data)
-            flowZ = (totalDollarVol1d - avgBasketVol) / avgBasketVol;
-          }
+        if (std30 > 0) {
+          flowZ = (totalDollarVol1d - avg30) / std30;
         }
 
         basketRows.push({
