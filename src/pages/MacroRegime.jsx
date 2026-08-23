@@ -12,6 +12,7 @@ import SignalTable from '../components/regime/SignalTable';
 import MacroCharts from '../components/regime/MacroCharts';
 import ChangeBanner from '../components/regime/ChangeBanner';
 import FreshnessBanner from '../components/FreshnessBanner';
+import { EnvironmentPanel } from '../components/board/SMBFeatures';
 import { useSnapshot } from '../hooks/useSnapshot';
 import { lazy as fwLazy, Suspense as FwSuspense } from 'react';
 
@@ -649,6 +650,9 @@ export default function MacroRegime() {
             </div>
           </div>
         </div>
+
+        {/* Environment temperature + CBOE P/C */}
+        <EnvironmentPanel />
 
         {/* Three Composite Gauges */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">

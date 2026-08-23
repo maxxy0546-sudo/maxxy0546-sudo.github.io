@@ -14,6 +14,7 @@ import React, { useMemo, useState } from 'react';
 import { LEVERED_ETFS, LEVERED_CATEGORY_ORDER } from '@/lib/board/leveredETFs';
 import CopyCsvButtons from './CopyCsvButtons';
 import { sortRows } from '@/lib/board/tableUtils';
+import { LeveredAppetiteStrip } from './SMBFeatures';
 
 function fmtPct(v, decimals = 2) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -140,7 +141,10 @@ export default function LeveredETFTab({ tradData, isLoading }) {
 
   return (
     <div className="font-mono px-5 md:px-8 py-5">
-      {/* Risk-appetite summary */}
+      {/* SMB levered appetite strip (from snapshot) */}
+      <LeveredAppetiteStrip />
+
+      {/* Risk-appetite summary (from tradData) */}
       {summary && (
         <div className="mb-5">
           <SectionLabel right={<span className="text-[8px]" style={{ color: 'var(--scanner-text3)' }}>{dataCount} of {LEVERED_ETFS.length} ETFs with data</span>}>

@@ -42,6 +42,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import FreshnessBanner from '../components/FreshnessBanner';
+import { SignalHitRateTable } from '../components/board/SMBFeatures';
 
 const SIGNAL_ENABLED = import.meta.env.VITE_ENABLE_SIGNAL_PAGE === 'true';
 
@@ -800,6 +801,9 @@ export default function Signal() {
 
       {/* History */}
       <SignalHistory history={history} />
+
+      {/* Signal hit-rate verification (from SMB) */}
+      <SignalHitRateTable />
 
       {/* Backtest stats (if available) */}
       {history.length >= 10 && (
