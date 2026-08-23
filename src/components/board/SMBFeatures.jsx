@@ -265,8 +265,8 @@ export function CryptoGridTable() {
 
   if (!grid || Object.keys(grid).length === 0) return null;
 
-  const TIMEFRAMES = ['daily', 'weekly', 'monthly', 'quarterly', 'ytd', 'yearly'];
-  const TF_LABELS = { daily: '1D', weekly: '1W', monthly: '1M', quarterly: '3M', ytd: 'YTD', yearly: '1Y' };
+  const TIMEFRAMES = ['daily', 'weekly', 'monthly', 'qtr', 'ytd', 'yearly'];
+  const TF_LABELS = { daily: '1D', weekly: '1W', monthly: '1M', qtr: '3M', ytd: '60D', yearly: '90D' };
 
   function fmtRet(v) {
     if (v == null) return '—';

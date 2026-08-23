@@ -1627,14 +1627,19 @@ function computeEnvironment(tradfiOHLCV) {
   const vxx = getLatest('VXX');
   const vxz = getLatest('VXZ');
 
-  // VIX term structure ratio (VXX/VXZ as proxy for front/late VIX futures)
+  // VIX term structure ratio.
+  // VXX tracks 30-day VIX futures, VXZ tracks 4-7 month VIX futures.
+  // The ratio VXX/VXZ (both ETN prices in the $10-$50 range) gives a
+  // term structure signal: < 0.3 = steep contango (calm), > 0.5 = flat
+  // (stressed). We only compute it if VXZ has enough data (10+ candles).
   let termRatio = null;
+  let hasTermData = false;
   if (vxx && vxz && vxz > 0) {
-    termRatio = vxx / (vxz / 1000); // VXZ is ~$80-100 so normalize by 1000
-  }
-  // Alternative: use VIX/VXZ ratio if VXX is unavailable
-  if (!termRatio && vix && vxz && vxz > 0) {
-    termRatio = vix / (vxz / 1000);
+    const vxzCandles = tradfiOHLCV?.['VXZ'] || [];
+    if (vxzCandles.length >= 10) {
+      termRatio = vxx / vxz;
+      hasTermData = true;
+    }
   }
 
   // Temperature contributions (each maps indicator to 0-100)
@@ -1644,14 +1649,18 @@ function computeEnvironment(tradfiOHLCV) {
     return Math.max(0, Math.min(100, (x - lo) / (hi - lo) * 100));
   }
 
-  // VIX: 12 → 0, 40 → 100 (weight 0.34)
-  if (vix != null) contribs.push({ name: 'VIX', score: band(vix, 12, 40), weight: 0.34, value: vix });
+  // VIX: 12 → 0, 40 → 100 (weight 0.58 if no term data, 0.34 if term data available)
+  const vixWeight = hasTermData ? 0.34 : 0.58;
+  if (vix != null) contribs.push({ name: 'VIX', score: band(vix, 12, 40), weight: vixWeight, value: vix });
   // VVIX: 85 → 0, 150 → 100 (weight 0.14)
   if (vvix != null) contribs.push({ name: 'VVIX', score: band(vvix, 85, 150), weight: 0.14, value: vvix });
   // SKEW: 118 → 0, 160 → 100 (weight 0.14)
   if (skew != null) contribs.push({ name: 'SKEW', score: band(skew, 118, 160), weight: 0.14, value: skew });
-  // Term structure ratio: 0.90 (steep contango) → 0, 1.12 (backwardation) → 100 (weight 0.24)
-  if (termRatio != null) contribs.push({ name: 'Term', score: band(termRatio, 0.90, 1.12), weight: 0.24, value: termRatio });
+  // Term structure ratio: 0.20 (steep contango) → 0, 0.50 (backwardation) → 100 (weight 0.24)
+  // Only included if VXZ has 10+ candles. Band adjusted for ETN price ratio.
+  if (hasTermData && termRatio != null) {
+    contribs.push({ name: 'Term', score: band(termRatio, 0.20, 0.50), weight: 0.24, value: termRatio });
+  }
   // If we don't have COR1M, redistribute the weight (0.14) to VIX
   // by adjusting VIX weight to 0.48 when COR1M is missing
   const totalWeight = contribs.reduce((s, c) => s + (c.score != null ? c.weight : 0), 0);
@@ -1689,8 +1698,8 @@ function computeEnvironment(tradfiOHLCV) {
     if (vix != null && skew != null && vix < 15 && skew < 125) {
       flags.push('Low VIX + low SKEW = double complacency — cheap tails, watch for a shock');
     }
-    if (termRatio != null && termRatio > 1.0) {
-      flags.push('VIX term structure in backwardation — front-month fear, acute stress signal');
+    if (hasTermData && termRatio != null && termRatio > 0.45) {
+      flags.push('VIX term structure flattening/backwardation — front-month fear, stress signal');
     }
   }
 
@@ -1730,11 +1739,12 @@ function computeLeveredAppetite(tradfiOHLCV) {
     // Import the levered ETF metadata
     // (We can't dynamically import, so we hardcode the short tickers here)
     const SHORT_TICKERS = new Set(['SQQQ','QID','PSQ','SPXS','SPXU','SDS','SH','TZA','TWM','SDOW',
-      'SMDD','RWM','MYY','DOG','SZK','BIS','TLL','SBB','SAGG','SBND','TMV','TBT','TYO','PST']);
+      'SMDD','RWM','MYY','DOG','SZK','BIS','TLL','SBB','SAGG','SBND','TMV','TBT','TYO','PST',
+      'UVXY']);  // UVXY is long volatility = hedge product
     const LONG_TICKERS = new Set(['TQQQ','QLD','UPRO','SPXL','SSO','TNA','UWM','UDOW',
       'SOXL','USD','TECL','ROM','FAS','LABU','NAIL','DPST','DRN','ERX','EDC','KOLD',
       'SCO','AGQ','ZSL','UGL','GLL','TMF','BOIL','UCO','CONL','BITX','BITU','ETHU',
-      'UVIX','UVXY','SVIX','SVXY','SBIT','ETHD']);
+      'UVIX','SVIX','SVXY','SBIT','ETHD']);  // UVIX/SVIX/SVXY = short vol = risk-on
 
     const longs = [];
     const shorts = [];
@@ -1816,6 +1826,19 @@ const FACTOR_BASKETS = {
     'IWM (Russell 2000)': ['IWM'],
     'DIA (Dow 30)': ['DIA'],
   },
+  'US Sectors': {
+    'XLK (Tech)': ['XLK'],
+    'XLF (Financials)': ['XLF'],
+    'XLE (Energy)': ['XLE'],
+    'XLV (Healthcare)': ['XLV'],
+    'XLI (Industrials)': ['XLI'],
+    'XLY (Cons Disc)': ['XLY'],
+    'XLP (Cons Stap)': ['XLP'],
+    'XLU (Utilities)': ['XLU'],
+    'XLRE (Real Estate)': ['XLRE'],
+    'XLB (Materials)': ['XLB'],
+    'XLC (Comms)': ['XLC'],
+  },
   'Cross-Asset': {
     'GLD (Gold)': ['GLD'],
     'TLT (20+Y Bonds)': ['TLT'],
@@ -1835,6 +1858,7 @@ function computeFactorUniverse(tradfiOHLCV) {
       for (const [basketName, tickers] of Object.entries(baskets)) {
         let totalDollarVol1d = 0;
         let totalDollarVol30d = 0;
+        let totalDollarVolStd30d = 0;
         let count30d = 0;
         let totalRet1d = 0;
         let validCount = 0;
@@ -1852,10 +1876,14 @@ function computeFactorUniverse(tradfiOHLCV) {
 
           totalDollarVol1d += dollarVols[n - 1] || 0;
 
-          // 30D average (excluding today)
+          // 30D average + std (excluding today)
           const trailing30 = dollarVols.slice(-31, -1);
           if (trailing30.length > 0) {
-            totalDollarVol30d += trailing30.reduce((s, v) => s + v, 0) / trailing30.length;
+            const avg30 = trailing30.reduce((s, v) => s + v, 0) / trailing30.length;
+            totalDollarVol30d += avg30;
+            // Compute std for true z-score
+            const variance = trailing30.reduce((s, v) => s + (v - avg30) ** 2, 0) / trailing30.length;
+            totalDollarVolStd30d += Math.sqrt(variance);
             count30d++;
           }
 
@@ -1866,12 +1894,18 @@ function computeFactorUniverse(tradfiOHLCV) {
           }
         }
 
-        // Flow z: today's basket $-vol vs trailing 30D average
+        // Flow z: true z-score = (today - mean) / std
+        // Aggregate across basket members (sum the $-vol, then z-score the basket total)
         let flowZ = null;
-        if (totalDollarVol30d > 0 && count30d > 0) {
-          const avg30 = totalDollarVol30d / count30d;
-          // Simple z: (today - avg) / avg (not a true std z, but informative)
-          flowZ = (totalDollarVol1d - avg30) / avg30;
+        if (count30d > 0 && totalDollarVol30d > 0) {
+          const avgBasketVol = totalDollarVol30d / count30d;
+          const stdBasketVol = totalDollarVolStd30d / count30d;
+          if (stdBasketVol > 0) {
+            flowZ = (totalDollarVol1d - avgBasketVol) / stdBasketVol;
+          } else {
+            // Fallback to ratio if std is 0 (shouldn't happen with real data)
+            flowZ = (totalDollarVol1d - avgBasketVol) / avgBasketVol;
+          }
         }
 
         basketRows.push({
@@ -1939,15 +1973,18 @@ function computeCryptoGrid(cryptoUniverse, coingeckoTop) {
           weekly: change7d,
           monthly: change30d,
           quarterly: change90d,
-          ytd: change90d, // approximate YTD with 90D (no full year data from CMC free tier)
-          yearly: change90d, // same approximation
+          // Label as 'qtr' (quarterly = 90D) since we don't have full YTD/1Y data
+          // from CMC free tier. UI labels these as "3M" instead of "YTD/1Y".
+          qtr: change90d,
+          ytd: change60d,   // 60D as YTD proxy (better than 90D for recent months)
+          yearly: change90d, // 90D as yearly proxy (labeled "3M" in UI until we get 365D data)
           market_cap: coin.marketCap || 0,
         });
       }
       if (rows.length > 0) {
         // Compute basket averages
         const avg = {};
-        for (const tf of ['daily', 'weekly', 'monthly', 'quarterly', 'ytd', 'yearly']) {
+        for (const tf of ['daily', 'weekly', 'monthly', 'qtr', 'ytd', 'yearly']) {
           const vals = rows.map(r => r[tf]).filter(v => v != null);
           avg[tf] = vals.length > 0 ? parseFloat((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(2)) : null;
         }
