@@ -1033,6 +1033,8 @@ export const TRAD_UNIVERSE = [
   { symbol: 'VEEV', name: 'Veeva Systems', category: 'Software Infrastructure', subtheme: 'Vertical SaaS', tier: 'Watch', type: 'Stock', source: 'twelvedata' },
   { symbol: 'VIAV', name: 'Viavi Solutions', category: 'Optics', subtheme: 'Optical Test/Measurement', tier: 'Active', type: 'Stock', source: 'twelvedata' },
   { symbol: 'VIX', name: 'CBOE Volatility Index', category: 'Benchmark', subtheme: 'VIX Index', tier: 'Core', type: 'Index' },
+  { symbol: 'VVIX', name: 'CBOE VVIX Index', category: 'Benchmark', subtheme: 'VVIX Vol-of-Vol', tier: 'Core', type: 'Index' },
+  { symbol: 'SKEW', name: 'CBOE SKEW Index', category: 'Benchmark', subtheme: 'SKEW Tail Risk', tier: 'Core', type: 'Index' },
   { symbol: 'VXX', name: 'iPath Series B S&P 500 VIX Short-Term Futures ETN', category: 'Benchmark', subtheme: 'VIX Short-Term', tier: 'Active', type: 'Stock', source: 'twelvedata' },
   { symbol: 'VXZ', name: 'iPath Series B S&P 500 VIX Mid-Term Futures ETN', category: 'Benchmark', subtheme: 'VIX Mid-Term', tier: 'Active', type: 'Stock', source: 'twelvedata' },
   { symbol: 'WDAY', name: 'Workday', category: 'Software Infrastructure', subtheme: 'Enterprise SaaS', tier: 'Active', type: 'Stock', source: 'twelvedata' },

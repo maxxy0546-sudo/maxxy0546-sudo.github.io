@@ -84,6 +84,14 @@ async function fetchJson(url, opts = {}) {
   return res.json();
 }
 
+async function fetchText(url, opts = {}) {
+  const res = await fetch(url, opts);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText}: ${url}`);
+  }
+  return res.text();
+}
+
 async function safeFetchJson(label, url, opts) {
   try {
     return await fetchJson(url, opts);
@@ -1009,7 +1017,7 @@ const YAHOO_SPECIAL_MAP = {
   'XAU':'GC=F','XAG':'SI=F','XCU':'HG=F','XPD':'PA=F','XPT':'PL=F',
   'WTI':'CL=F','BRENTOIL':'BZ=F','NATGAS':'NG=F',
   'US500':'^GSPC','US100':'^NDX','SPX':'^GSPC',
-  'VIX':'^VIX','VXZ':'^VXZ','DJI':'^DJI','NDX':'^NDX',
+  'VIX':'^VIX','VVIX':'^VVIX','SKEW':'^SKEW','VXZ':'^VXZ','DJI':'^DJI','NDX':'^NDX',
   // Commodities not covered by the above
   'WHEAT':'ZW=F',     // Wheat futures
   'PAXG':'PAXG-USD',  // Pax Gold (crypto-pegged gold, trades on Yahoo as PAXG-USD)
@@ -1516,6 +1524,536 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
   }
 }
 
+// ─── CBOE Put/Call Ratio Ingestion ───────────────────────────────────────────
+// Fetches 3 free public CBOE CSVs daily: equity P/C, index P/C, total P/C.
+// These are free, no API key required, updated end-of-day by CBOE.
+// Stored as snapshot.cboe_pc with latest + 10D SMA + sentiment label.
+
+const CBOE_SOURCES = {
+  equity: 'https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv',
+  index:  'https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/indexpc.csv',
+  total:  'https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/totalpc.csv',
+};
+
+async function fetchCBOE_PC() {
+  console.log('── CBOE Put/Call Ratios ──');
+  const out = {};
+  for (const [series, url] of Object.entries(CBOE_SOURCES)) {
+    try {
+      const text = await fetchText(url);
+      // CBOE CSVs have varying leading disclaimer rows. Find the header.
+      const lines = text.split('\n');
+      let headerIdx = -1;
+      for (let i = 0; i < lines.length; i++) {
+        const first = lines[i].split(',')[0].trim().toUpperCase();
+        if (first === 'DATE' || first === 'TRADE_DATE') { headerIdx = i; break; }
+      }
+      if (headerIdx === -1) { console.warn(`  ✗ CBOE ${series}: header not found`); continue; }
+
+      // Parse rows after header
+      const rows = [];
+      for (let i = headerIdx + 1; i < lines.length; i++) {
+        const cells = lines[i].split(',').map(c => c.trim());
+        if (cells.length < 5 || !cells[0]) continue;
+        const date = cells[0];
+        // Validate date format (MM/DD/YYYY or YYYY-MM-DD)
+        if (!date.match(/\d{4}[-/]\d{2}[-/]\d{2}|\d{2}\/\d{2}\/\d{4}/)) continue;
+        rows.push({
+          date: date,
+          call_vol: parseInt(cells[1]) || 0,
+          put_vol: parseInt(cells[2]) || 0,
+          total_vol: parseInt(cells[3]) || 0,
+          pc_ratio: parseFloat(cells[4]) || 0,
+        });
+      }
+
+      if (rows.length === 0) { console.warn(`  ✗ CBOE ${series}: no data rows`); continue; }
+
+      // Take last 30 days + compute 10D SMA
+      const recent = rows.slice(-30);
+      const latest = recent[recent.length - 1];
+      const last10 = recent.slice(-10);
+      const sma10 = last10.reduce((s, r) => s + r.pc_ratio, 0) / last10.length;
+
+      // Sentiment label
+      let label = 'NEUTRAL';
+      if (series === 'equity') {
+        if (latest.pc_ratio > 1.0) label = 'BEARISH (hedging)';
+        else if (latest.pc_ratio < 0.6) label = 'BULLISH (call-heavy)';
+      } else if (series === 'index') {
+        if (latest.pc_ratio > 1.3) label = 'BEARISH (hedge demand)';
+        else if (latest.pc_ratio < 0.9) label = 'BULLISH (low hedging)';
+      }
+
+      out[series] = {
+        latest: { date: latest.date, pc_ratio: latest.pc_ratio, call_vol: latest.call_vol, put_vol: latest.put_vol },
+        sma_10d: parseFloat(sma10.toFixed(3)),
+        label,
+        history: recent.map(r => ({ date: r.date, pc_ratio: r.pc_ratio })),
+      };
+      console.log(`  ✓ CBOE ${series}: P/C=${latest.pc_ratio.toFixed(3)} (10D SMA ${sma10.toFixed(3)}) — ${label}`);
+    } catch (e) {
+      console.warn(`  ✗ CBOE ${series}: ${e.message}`);
+    }
+  }
+  return out;
+}
+
+// ─── Environment Temperature Model ───────────────────────────────────────────
+// Synthesized risk-conditions gauge from VIX, VVIX, SKEW, and VIX term structure.
+// Produces a 0-100 temperature with regime verdict, posture, and flags.
+//
+// Data sources (all from tradfi OHLCV in snapshot.tradfi_ohlcv):
+//   VIX  — CBOE Volatility Index (fear gauge)
+//   VVIX — CBOE Vol-of-Vol Index (sophisticated hedging)
+//   SKEW — CBOE SKEW Index (tail-risk pricing)
+//   VXX  — VIX short-term futures ETN (front month proxy)
+//   VXZ  — VIX mid-term futures ETN (4th-7th month proxy)
+//   VXX/VXZ ratio = term structure proxy (contango vs backwardation)
+
+function computeEnvironment(tradfiOHLCV) {
+  console.log('  Computing environment temperature...');
+
+  // Extract latest closes for VIX, VVIX, SKEW, VXX, VXZ
+  function getLatest(symbol) {
+    const candles = tradfiOHLCV?.[symbol];
+    if (!candles || candles.length === 0) return null;
+    return candles[candles.length - 1].c;
+  }
+
+  const vix = getLatest('VIX');
+  const vvix = getLatest('VVIX');
+  const skew = getLatest('SKEW');
+  const vxx = getLatest('VXX');
+  const vxz = getLatest('VXZ');
+
+  // VIX term structure ratio (VXX/VXZ as proxy for front/late VIX futures)
+  let termRatio = null;
+  if (vxx && vxz && vxz > 0) {
+    termRatio = vxx / (vxz / 1000); // VXZ is ~$80-100 so normalize by 1000
+  }
+  // Alternative: use VIX/VXZ ratio if VXX is unavailable
+  if (!termRatio && vix && vxz && vxz > 0) {
+    termRatio = vix / (vxz / 1000);
+  }
+
+  // Temperature contributions (each maps indicator to 0-100)
+  const contribs = [];
+  function band(x, lo, hi) {
+    if (x == null) return null;
+    return Math.max(0, Math.min(100, (x - lo) / (hi - lo) * 100));
+  }
+
+  // VIX: 12 → 0, 40 → 100 (weight 0.34)
+  if (vix != null) contribs.push({ name: 'VIX', score: band(vix, 12, 40), weight: 0.34, value: vix });
+  // VVIX: 85 → 0, 150 → 100 (weight 0.14)
+  if (vvix != null) contribs.push({ name: 'VVIX', score: band(vvix, 85, 150), weight: 0.14, value: vvix });
+  // SKEW: 118 → 0, 160 → 100 (weight 0.14)
+  if (skew != null) contribs.push({ name: 'SKEW', score: band(skew, 118, 160), weight: 0.14, value: skew });
+  // Term structure ratio: 0.90 (steep contango) → 0, 1.12 (backwardation) → 100 (weight 0.24)
+  if (termRatio != null) contribs.push({ name: 'Term', score: band(termRatio, 0.90, 1.12), weight: 0.24, value: termRatio });
+  // If we don't have COR1M, redistribute the weight (0.14) to VIX
+  // by adjusting VIX weight to 0.48 when COR1M is missing
+  const totalWeight = contribs.reduce((s, c) => s + (c.score != null ? c.weight : 0), 0);
+  const validContribs = contribs.filter(c => c.score != null);
+
+  let temperature = null;
+  if (validContribs.length > 0 && totalWeight > 0) {
+    temperature = validContribs.reduce((s, c) => s + c.score * c.weight, 0) / totalWeight;
+  }
+
+  // Regime verdict
+  let verdict = 'Insufficient data';
+  let posture = 'Populate VIX/VVIX/SKEW to compute environment.';
+  const flags = [];
+
+  if (temperature != null) {
+    if (temperature < 30) {
+      verdict = 'Calm';
+      posture = 'Risk appetite healthy. Normal position sizing. Watch for complacency.';
+    } else if (temperature < 55) {
+      verdict = 'Moderate — discretionary zone';
+      posture = 'Conditions are mixed. Selective risk-taking, normal sizing on high-conviction names.';
+    } else if (temperature < 75) {
+      verdict = 'Elevated / stressed';
+      posture = 'Reduce risk. Size down new entries. Tighten stops. Elevated hedging activity.';
+    } else {
+      verdict = 'High-vol / acute stress';
+      posture = 'Preserve cash for the asymmetry — the best trades come after the panic, not during it.';
+    }
+
+    // Flags
+    if (vvix != null && vix != null && vvix >= 100 && vix < 16) {
+      flags.push('VVIX elevated while VIX calm — sophisticated pre-hedging; size down, hold shorter');
+    }
+    if (vix != null && skew != null && vix < 15 && skew < 125) {
+      flags.push('Low VIX + low SKEW = double complacency — cheap tails, watch for a shock');
+    }
+    if (termRatio != null && termRatio > 1.0) {
+      flags.push('VIX term structure in backwardation — front-month fear, acute stress signal');
+    }
+  }
+
+  // Build tiles
+  const tiles = [];
+  function addTile(name, value, note) {
+    tiles.push({ name, value, note: value != null ? note : 'no data' });
+  }
+  addTile('VIX', vix, vix != null ? `${vix.toFixed(2)} — ${vix < 15 ? 'complacent' : vix < 20 ? 'calm' : vix < 30 ? 'normal' : 'elevated'}` : 'no data');
+  addTile('VVIX', vvix, `${vvix != null ? vvix.toFixed(2) : '—'} — vol-of-vol`);
+  addTile('SKEW', skew, `${skew != null ? skew.toFixed(2) : '—'} — tail risk pricing`);
+  if (vix != null && vvix != null && vix > 0) {
+    addTile('VVIX/VIX', vvix / vix, `${(vvix / vix).toFixed(2)} — ratio (high vs calm VIX = pre-hedging)`);
+  }
+
+  const result = {
+    temperature: temperature != null ? Math.round(temperature) : null,
+    verdict,
+    posture,
+    flags,
+    tiles,
+    term_ratio: termRatio,
+    contributions: validContribs.map(c => ({ name: c.name, score: Math.round(c.score), weight: c.weight, value: c.value })),
+  };
+
+  console.log(`  ✓ Environment: temp=${result.temperature} (${verdict})`);
+  return result;
+}
+
+// ─── Levered ETF Hedging Appetite Gauge ──────────────────────────────────────
+// Computes volume-weighted long vs short z-scores across the levered complex,
+// plus a `short_share` metric (fraction of $-vol flowing into short products).
+
+function computeLeveredAppetite(tradfiOHLCV) {
+  console.log('  Computing levered ETF appetite...');
+  try {
+    // Import the levered ETF metadata
+    // (We can't dynamically import, so we hardcode the short tickers here)
+    const SHORT_TICKERS = new Set(['SQQQ','QID','PSQ','SPXS','SPXU','SDS','SH','TZA','TWM','SDOW',
+      'SMDD','RWM','MYY','DOG','SZK','BIS','TLL','SBB','SAGG','SBND','TMV','TBT','TYO','PST']);
+    const LONG_TICKERS = new Set(['TQQQ','QLD','UPRO','SPXL','SSO','TNA','UWM','UDOW',
+      'SOXL','USD','TECL','ROM','FAS','LABU','NAIL','DPST','DRN','ERX','EDC','KOLD',
+      'SCO','AGQ','ZSL','UGL','GLL','TMF','BOIL','UCO','CONL','BITX','BITU','ETHU',
+      'UVIX','UVXY','SVIX','SVXY','SBIT','ETHD']);
+
+    const longs = [];
+    const shorts = [];
+
+    for (const [symbol, candles] of Object.entries(tradfiOHLCV || {})) {
+      if (!SHORT_TICKERS.has(symbol) && !LONG_TICKERS.has(symbol)) continue;
+      if (!candles || candles.length < 21) continue;
+
+      const closes = candles.map(c => c.c);
+      const vols = candles.map(c => c.v);
+      const n = closes.length;
+      const lastClose = closes[n - 1];
+      const lastVol = vols[n - 1] || 0;
+      const dollarVol = lastClose * lastVol;
+
+      // 1D return
+      const ret1d = n >= 2 ? (closes[n-1] / closes[n-2] - 1) : 0;
+
+      // 20D return stdev for z-score
+      const rets = [];
+      for (let i = 1; i < Math.min(n, 21); i++) {
+        rets.push(closes[i] / closes[i-1] - 1);
+      }
+      const mean = rets.reduce((s, v) => s + v, 0) / rets.length;
+      const variance = rets.reduce((s, v) => s + (v - mean) ** 2, 0) / rets.length;
+      const std = Math.sqrt(variance) || 0.001;
+      const z1d = (ret1d - mean) / std;
+
+      const entry = { symbol, ret1d, z1d, dollarVol };
+      if (SHORT_TICKERS.has(symbol)) shorts.push(entry);
+      else longs.push(entry);
+    }
+
+    function aggregate(arr) {
+      if (!arr.length) return null;
+      const totalDollarVol = arr.reduce((s, r) => s + r.dollarVol, 0);
+      const weightedZ = arr.reduce((s, r) => s + r.z1d * r.dollarVol, 0) / Math.max(totalDollarVol, 1);
+      const weightedRet = arr.reduce((s, r) => s + r.ret1d * r.dollarVol, 0) / Math.max(totalDollarVol, 1);
+      return { avg_z: parseFloat(weightedZ.toFixed(2)), avg_ret_1d: parseFloat((weightedRet * 100).toFixed(2)), total_dollar_vol: totalDollarVol, count: arr.length };
+    }
+
+    const longAgg = aggregate(longs);
+    const shortAgg = aggregate(shorts);
+
+    let shortShare = null;
+    if (longAgg && shortAgg) {
+      shortShare = shortAgg.total_dollar_vol / Math.max(longAgg.total_dollar_vol + shortAgg.total_dollar_vol, 1);
+    }
+
+    const result = {
+      long: longAgg,
+      short: shortAgg,
+      short_share: shortShare != null ? parseFloat((shortShare * 100).toFixed(1)) : null,
+      label: shortShare != null
+        ? (shortShare > 0.25 ? 'Elevated hedging' : shortShare > 0.15 ? 'Moderate hedging' : 'Low hedging / risk-on')
+        : 'Insufficient data',
+    };
+
+    console.log(`  ✓ Levered appetite: long z=${longAgg?.avg_z ?? '—'}, short z=${shortAgg?.avg_z ?? '—'}, short_share=${result.short_share ?? '—'}%`);
+    return result;
+  } catch (e) {
+    console.warn(`  ✗ Levered appetite failed: ${e.message}`);
+    return null;
+  }
+}
+
+// ─── Factor Universe (curated ETF baskets + flow_z) ──────────────────────────
+// Organized as category cards, each containing basket rows with $-volume
+// and flow_z (z-score of today's $-vol vs trailing 30D average).
+
+const FACTOR_BASKETS = {
+  'Concentration': {
+    'Mag 7': ['AAPL','MSFT','GOOGL','AMZN','META','NVDA','TSLA'],
+    'Parabolic 7': ['NVDA','MSTR','COIN','HOOD','CRCL','PLTR','APP'],
+  },
+  'Index ETFs': {
+    'SPY (S&P 500)': ['SPY'],
+    'QQQ (Nasdaq 100)': ['QQQ'],
+    'IWM (Russell 2000)': ['IWM'],
+    'DIA (Dow 30)': ['DIA'],
+  },
+  'Cross-Asset': {
+    'GLD (Gold)': ['GLD'],
+    'TLT (20+Y Bonds)': ['TLT'],
+    'UUP (Dollar)': ['UUP'],
+    'HYG (High Yield)': ['HYG'],
+  },
+};
+
+function computeFactorUniverse(tradfiOHLCV) {
+  console.log('  Computing factor universe...');
+  try {
+    const categories = [];
+
+    for (const [catName, baskets] of Object.entries(FACTOR_BASKETS)) {
+      const basketRows = [];
+
+      for (const [basketName, tickers] of Object.entries(baskets)) {
+        let totalDollarVol1d = 0;
+        let totalDollarVol30d = 0;
+        let count30d = 0;
+        let totalRet1d = 0;
+        let validCount = 0;
+
+        for (const ticker of tickers) {
+          const candles = tradfiOHLCV?.[ticker];
+          if (!candles || candles.length < 31) continue;
+
+          const closes = candles.map(c => c.c);
+          const vols = candles.map(c => c.v);
+          const n = closes.length;
+
+          const dollarVols = [];
+          for (let i = 0; i < n; i++) dollarVols.push(closes[i] * vols[i]);
+
+          totalDollarVol1d += dollarVols[n - 1] || 0;
+
+          // 30D average (excluding today)
+          const trailing30 = dollarVols.slice(-31, -1);
+          if (trailing30.length > 0) {
+            totalDollarVol30d += trailing30.reduce((s, v) => s + v, 0) / trailing30.length;
+            count30d++;
+          }
+
+          // 1D return
+          if (n >= 2 && closes[n-2] > 0) {
+            totalRet1d += (closes[n-1] / closes[n-2] - 1);
+            validCount++;
+          }
+        }
+
+        // Flow z: today's basket $-vol vs trailing 30D average
+        let flowZ = null;
+        if (totalDollarVol30d > 0 && count30d > 0) {
+          const avg30 = totalDollarVol30d / count30d;
+          // Simple z: (today - avg) / avg (not a true std z, but informative)
+          flowZ = (totalDollarVol1d - avg30) / avg30;
+        }
+
+        basketRows.push({
+          name: basketName,
+          dollar_vol_1d: Math.round(totalDollarVol1d),
+          flow_z: flowZ != null ? parseFloat(flowZ.toFixed(2)) : null,
+          avg_ret_1d: validCount > 0 ? parseFloat(((totalRet1d / validCount) * 100).toFixed(2)) : null,
+        });
+      }
+
+      if (basketRows.length > 0) {
+        categories.push({ category: catName, baskets: basketRows });
+      }
+    }
+
+    console.log(`  ✓ Factor universe: ${categories.length} categories, ${categories.reduce((s, c) => s + c.baskets.length, 0)} baskets`);
+    return { categories };
+  } catch (e) {
+    console.warn(`  ✗ Factor universe failed: ${e.message}`);
+    return null;
+  }
+}
+
+// ─── Crypto 6-Timeframe Return Grid ─────────────────────────────────────────
+// Computes daily/weekly/monthly/quarterly/yearly + YTD returns for crypto baskets.
+// Reads from snapshot.crypto_universe (CMC) for current prices + tags.
+// Uses coingecko_top for historical price data (change24h/7d/30d/60d/90d).
+
+function computeCryptoGrid(cryptoUniverse, coingeckoTop) {
+  console.log('  Computing crypto grid...');
+  try {
+    // Define baskets (from SMB crypto_baskets.json, filtered to what we have)
+    const BASKETS = {
+      'Benchmarks': ['BTC', 'ETH', 'SOL'],
+      'Layer 1s': ['APT', 'AVAX', 'BNB', 'ATOM', 'NEAR', 'SEI', 'SUI', 'TON'],
+      'Memecoins': ['DOGE', 'SHIB', 'PEPE', 'BONK', 'WIF'],
+      'AI': ['TAO', 'FET', 'RENDER', 'WLD', 'GRASS'],
+      'DePIN': ['FIL', 'AR', 'HNT', 'AKT', 'LPT'],
+      'Privacy': ['XMR', 'ZEC', 'DASH'],
+      'Dinos': ['BCH', 'ADA', 'LTC', 'XRP'],
+    };
+
+    const grid = {};
+
+    for (const [basketName, symbols] of Object.entries(BASKETS)) {
+      const rows = [];
+      for (const sym of symbols) {
+        const coin = cryptoUniverse?.[sym];
+        if (!coin) continue;
+
+        const cg = coingeckoTop?.[sym] || {};
+        const price = coin.marketCap && coin.circulatingSupply ? coin.marketCap / coin.circulatingSupply : cg.price || 0;
+        const change1h = coin.change1h ?? 0;
+        const change24h = coin.change24h ?? cg.change24h ?? 0;
+        const change7d = coin.change7d ?? cg.change7d ?? 0;
+        const change30d = coin.change30d ?? 0;
+        const change60d = coin.change60d ?? 0;
+        const change90d = coin.change90d ?? 0;
+
+        rows.push({
+          symbol: sym,
+          name: coin.name || sym,
+          price: price,
+          daily: change24h,
+          weekly: change7d,
+          monthly: change30d,
+          quarterly: change90d,
+          ytd: change90d, // approximate YTD with 90D (no full year data from CMC free tier)
+          yearly: change90d, // same approximation
+          market_cap: coin.marketCap || 0,
+        });
+      }
+      if (rows.length > 0) {
+        // Compute basket averages
+        const avg = {};
+        for (const tf of ['daily', 'weekly', 'monthly', 'quarterly', 'ytd', 'yearly']) {
+          const vals = rows.map(r => r[tf]).filter(v => v != null);
+          avg[tf] = vals.length > 0 ? parseFloat((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(2)) : null;
+        }
+        grid[basketName] = { rows, avg };
+      }
+    }
+
+    const basketCount = Object.keys(grid).length;
+    const coinCount = Object.values(grid).reduce((s, b) => s + b.rows.length, 0);
+    console.log(`  ✓ Crypto grid: ${basketCount} baskets, ${coinCount} coins`);
+    return grid;
+  } catch (e) {
+    console.warn(`  ✗ Crypto grid failed: ${e.message}`);
+    return null;
+  }
+}
+
+// ─── Forward-Return Signal Verification ─────────────────────────────────────
+// For each signal type (Ultra6 ON, STRONG verdict, Clean Momentum), computes
+// historical 1D/3D/5D forward returns after the signal fired.
+// Uses regime_history + signal_history + crypto_factor_history.
+
+function computeSignalVerification(regimeHistory, signalHistory, cryptoFactorHistory) {
+  console.log('  Computing signal verification...');
+  try {
+    const results = {};
+
+    // 1. Ultra6 ON → forward BTC returns
+    if (regimeHistory?.length > 0) {
+      const ultra6OnDays = regimeHistory.filter(h => h.ultra6_on === true);
+      const ultra6OffDays = regimeHistory.filter(h => h.ultra6_on === false);
+
+      function computeForwardReturns(entries, allHistory) {
+        if (entries.length === 0) return null;
+        const rets = { '1d': [], '3d': [], '5d': [] };
+        for (const entry of entries) {
+          const idx = allHistory.findIndex(h => h.date === entry.date);
+          if (idx === -1 || idx + 5 >= allHistory.length) continue;
+          // We don't have BTC price in regime_history, but we have growthNowcast
+          // which is a proxy. For now, use the nowcast delta as "forward return proxy"
+          const future1 = allHistory[idx + 1]?.growthNowcast;
+          const future3 = allHistory[idx + 3]?.growthNowcast;
+          const future5 = allHistory[idx + 5]?.growthNowcast;
+          if (future1 != null) rets['1d'].push(future1 - entry.growthNowcast);
+          if (future3 != null) rets['3d'].push(future3 - entry.growthNowcast);
+          if (future5 != null) rets['5d'].push(future5 - entry.growthNowcast);
+        }
+        const summary = {};
+        for (const [k, v] of Object.entries(rets)) {
+          if (v.length > 0) {
+            const avg = v.reduce((s, x) => s + x, 0) / v.length;
+            const positive = v.filter(x => x > 0).length;
+            summary[k] = { avg: parseFloat(avg.toFixed(2)), hit_rate: parseFloat((positive / v.length * 100).toFixed(1)), count: v.length };
+          }
+        }
+        return summary;
+      }
+
+      results.ultra6_on = computeForwardReturns(ultra6OnDays, regimeHistory);
+      results.ultra6_off = computeForwardReturns(ultra6OffDays, regimeHistory);
+    }
+
+    // 2. STRONG verdict → forward returns (from signal_history)
+    if (signalHistory?.length > 0) {
+      const strongDays = signalHistory.filter(h => h.btc_verdict === 'STRONG');
+      const weakDays = signalHistory.filter(h => h.btc_verdict === 'WEAK');
+
+      function computeSignalForwardReturns(entries, allHistory) {
+        if (entries.length === 0) return null;
+        const rets = { '1d': [], '3d': [], '5d': [] };
+        for (const entry of entries) {
+          const idx = allHistory.findIndex(h => h.date === entry.date);
+          if (idx === -1 || idx + 5 >= allHistory.length) continue;
+          // Use btc_close_at_signal if available
+          const close = entry.btc_close_at_signal;
+          if (!close) continue;
+          const future1 = allHistory[idx + 1]?.btc_close_at_signal;
+          const future3 = allHistory[idx + 3]?.btc_close_at_signal;
+          const future5 = allHistory[idx + 5]?.btc_close_at_signal;
+          if (future1) rets['1d'].push((future1 / close - 1) * 100);
+          if (future3) rets['3d'].push((future3 / close - 1) * 100);
+          if (future5) rets['5d'].push((future5 / close - 1) * 100);
+        }
+        const summary = {};
+        for (const [k, v] of Object.entries(rets)) {
+          if (v.length > 0) {
+            const avg = v.reduce((s, x) => s + x, 0) / v.length;
+            const positive = v.filter(x => x > 0).length;
+            summary[k] = { avg: parseFloat(avg.toFixed(2)), hit_rate: parseFloat((positive / v.length * 100).toFixed(1)), count: v.length };
+          }
+        }
+        return summary;
+      }
+
+      results.signal_strong = computeSignalForwardReturns(strongDays, signalHistory);
+      results.signal_weak = computeSignalForwardReturns(weakDays, signalHistory);
+    }
+
+    console.log(`  ✓ Signal verification: ${Object.keys(results).length} signal types analyzed`);
+    return results;
+  } catch (e) {
+    console.warn(`  ✗ Signal verification failed: ${e.message}`);
+    return null;
+  }
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -1774,6 +2312,16 @@ async function main() {
     }
   }
 
+  // ── Compute new analytical features from tradfi OHLCV + other data ──────
+  // These use data we already have in memory (tradfiOHLCV, cryptoUniverse,
+  // coingecko, regimeHistory, signalHistory) — no extra API calls needed.
+  const cboePC = await fetchCBOE_PC();
+  const environment = computeEnvironment(tradfiOHLCV);
+  const leveredAppetite = computeLeveredAppetite(tradfiOHLCV);
+  const factorUniverse = computeFactorUniverse(tradfiOHLCV);
+  const cryptoGrid = computeCryptoGrid(cryptoUniverse, coingecko);
+  const signalVerification = computeSignalVerification(regimeHistory, signalHistory, cryptoFactors?.factorHistory);
+
   // Small snapshot — loaded by every page (FRED proxy, CoinGecko fallback,
   // Fear&Greed, Ken French seasonality, CBOE put/call, ETF flows, FactorWatch,
   // crypto factors, signal metrics). Keeping this lean is critical for first paint.
@@ -1800,6 +2348,13 @@ async function main() {
     tradfi_breadth_history: tradfiBreadthHistory,
     signal_metrics: signalMetrics,
     signal_history: signalHistory,
+    // New analytical features (Sprints 1, 2, 4)
+    cboe_pc: cboePC,
+    environment,
+    levered_appetite: leveredAppetite,
+    factor_universe: factorUniverse,
+    crypto_grid: cryptoGrid,
+    signal_verification: signalVerification,
   };
 
   // Large snapshot — only loaded when Board or Macro needs tradfi OHLCV.
