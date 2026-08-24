@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import TradingViewChart from '@/components/scanner/TradingViewChart';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import CopyCsvButtons from './CopyCsvButtons';
-import { CryptoGridTable } from './SMBFeatures';
 
 function fmtPct(v) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -245,11 +244,6 @@ export default function CryptoTab({ cryptoAssets }) {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Crypto 6-timeframe return grid (from SMB) */}
-      <div className="px-5 md:px-8 py-4">
-        <CryptoGridTable />
       </div>
 
       {/* TradingView chart sheet */}

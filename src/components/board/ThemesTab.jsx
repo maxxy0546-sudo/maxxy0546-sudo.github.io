@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import CopyCsvButtons from './CopyCsvButtons';
+import { CryptoGridTable } from './SMBFeatures';
 
 const STATUS_PILL = {
   'DOMINANT':      { bg: 'rgba(0,230,118,0.12)',  text: 'var(--scanner-green)', border: 'rgba(0,230,118,0.3)' },
@@ -197,6 +198,11 @@ export default function ThemesTab({ themes, constituents }) {
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Crypto 6-Timeframe Return Grid (moved from Crypto tab) */}
+      <div className="mt-6">
+        <CryptoGridTable />
       </div>
     </div>
   );

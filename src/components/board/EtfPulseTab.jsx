@@ -10,6 +10,7 @@
 
 import React, { useMemo } from 'react';
 import { getEtfPulse } from '@/lib/board/tradfiScoring';
+import { FactorUniverseTable } from './SMBFeatures';
 
 function fmtPct(v, decimals = 2) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -160,6 +161,9 @@ export default function EtfPulseTab({ tradData, isLoading }) {
           Green bar (right) = sector outperforming SPY over 20D. Red bar (left) = underperforming.
         </div>
       </div>
+
+      {/* Factor Universe — ETF Flow Grid (moved from Theme Scores tab) */}
+      <FactorUniverseTable />
     </div>
   );
 }
