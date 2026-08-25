@@ -70,7 +70,13 @@ function parseRetSigma(cellText) {
  */
 function parsePct(cellText) {
   if (!cellText || cellText === '—' || cellText === '') return null;
-  const m = cellText.match(/([+-]?[\d.]+)/);
+  // Audit F-14-b-19 (2026-08-26): strip commas before matching so values
+  // like "1,234.56%" parse as 1234.56, not 1 (the regex would stop at the
+  // first comma and parseFloat("1") = 1). Latent — no current FW cell
+  // triggers this, but if FW ever starts formatting large percentages
+  // with commas (e.g. YTD returns >1000%), this would silently break.
+  const cleaned = cellText.replace(/,/g, '');
+  const m = cleaned.match(/([+-]?[\d.]+)/);
   return m ? parseFloat(m[1]) : null;
 }
 
@@ -284,10 +290,18 @@ function parseBaskets(html) {
 /**
  * Extract the "as of" date from the page header.
  * The header contains text like "as of 2026-07-17".
+ *
+ * Audit F-14-b-9 (2026-08-26): previously returned today's date when the
+ * regex didn't match — a freshness lie. The freshness check downstream
+ * compares as_of to today's date to decide if FW data is stale; if the
+ * regex misses (e.g. FW changes their header wording), the snapshot would
+ * ship with a 'today' as_of and the staleness check would never fire.
+ * Now returns null on regex miss — caller handles null by treating the
+ * data as suspicious and logging a warning.
  */
 function parseAsOfDate(html) {
   const m = html.match(/as of\s*(\d{4}-\d{2}-\d{2})/i);
-  return m ? m[1] : new Date().toISOString().slice(0, 10);
+  return m ? m[1] : null;
 }
 
 /**

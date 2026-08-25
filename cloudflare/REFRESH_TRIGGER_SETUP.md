@@ -39,7 +39,13 @@ You need a token with permission to dispatch workflows on `trend-scan/trend-scan
 
 1. Go to https://github.com/settings/tokens/new
 2. **Note:** `trendscan-refresh-trigger`
-3. **Scopes:** `repo` (for private repos) + `workflow` (to dispatch workflows)
+3. **Scopes:** `workflow` only.
+   - Audit F-14-b-14 (2026-08-26): previously recommended `repo` + `workflow`.
+     The repo is public, so `repo` scope is broader than needed — `workflow`
+     alone is sufficient to dispatch workflows on public repos. Using `repo`
+     would grant read/write access to ALL your repos' contents, source code,
+     issues, PRs, and wiki — far more than this Worker needs. Only use `repo`
+     if you have private repos you also want to trigger from this Worker.
 4. **Expiration:** 90 days
 5. Click **Generate token** and copy the value (starts with `ghp_...`)
 

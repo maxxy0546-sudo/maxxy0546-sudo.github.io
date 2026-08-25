@@ -279,15 +279,35 @@ export async function computeSignalMetrics({
     btc_5d_hit: null,
   });
   // Backfill 5-day returns
+  // Audit F-14-b-12 (2026-08-26): previously used today's BTC close
+  // (btcSignal.close) for ALL entries ≥5 days old, so an entry from 30
+  // days ago got a 30-day return labeled as "5-day return". Hit-rate
+  // scoreboard mixed different holding periods. Now uses the BTC close
+  // at entryDate + 5 days from the BTC candle history.
   for (const entry of signalHistory) {
-    if (entry.btc_5d_return === null && entry.btc_close_at_signal && btcSignal.close) {
+    if (entry.btc_5d_return === null && entry.btc_close_at_signal) {
       const entryDate = new Date(entry.date).getTime();
       const daysAgo = (Date.now() - entryDate) / 86400000;
       if (daysAgo >= 5) {
-        entry.btc_5d_return = ((btcSignal.close - entry.btc_close_at_signal) / entry.btc_close_at_signal) * 100;
-        entry.btc_5d_hit =
-          (entry.btc_verdict === 'STRONG' && entry.btc_5d_return > 0) ||
-          (entry.btc_verdict === 'WEAK' && entry.btc_5d_return < 0);
+        // Find the BTC close 5 days after the entry date.
+        // btcCandles is sorted oldest→newest. Find the first candle whose
+        // ts >= entryDate + 5 days. If no candle exists yet (entry is from
+        // today, daysAgo < 5 — but we're inside the daysAgo >= 5 branch), or
+        // if the candle history doesn't go back far enough, skip.
+        const targetTs = entryDate + 5 * 86400000;
+        let btcCloseAtPlus5d = null;
+        for (let i = 0; i < btcCandles.length; i++) {
+          if (btcCandles[i].ts >= targetTs) {
+            btcCloseAtPlus5d = btcCandles[i].close;
+            break;
+          }
+        }
+        if (btcCloseAtPlus5d != null) {
+          entry.btc_5d_return = ((btcCloseAtPlus5d - entry.btc_close_at_signal) / entry.btc_close_at_signal) * 100;
+          entry.btc_5d_hit =
+            (entry.btc_verdict === 'STRONG' && entry.btc_5d_return > 0) ||
+            (entry.btc_verdict === 'WEAK' && entry.btc_5d_return < 0);
+        }
       }
     }
   }

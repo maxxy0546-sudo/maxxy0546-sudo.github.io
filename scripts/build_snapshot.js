@@ -2163,6 +2163,17 @@ async function main() {
     cryptoUniverse = _prevSnapshot.crypto_universe;
   }
 
+  // Audit F-14-a-6 (2026-08-26): coingecko_top had no stale-data fallback.
+  // Every other major fetch (cmcTrending, globalMetrics, binanceOI, fred,
+  // etfFlows, factorWatch) has a fallback — coingecko_top was forgotten.
+  // A single 429 from CoinGecko wiped Board's price-change column for ~6h
+  // until the next GHA rebuild. Now falls back to previous snapshot's
+  // coingecko_top when the fresh fetch returns empty.
+  if ((!coingecko || Object.keys(coingecko).length === 0) && _prevSnapshot?.coingecko_top) {
+    console.log('  ⚠ coingecko_top empty — using previous snapshot (stale)');
+    coingecko = _prevSnapshot.coingecko_top;
+  }
+
   // ── Enrich crypto_universe with CMC tags + platform detail (Phase 2) ──────
   // Only runs if we have a CMC-sourced universe (skips CoinGecko-fallback universes
   // since CMC /info endpoint needs CMC IDs and would be wasteful on CoinGecko data).
