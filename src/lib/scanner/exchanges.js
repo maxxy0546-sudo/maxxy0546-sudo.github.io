@@ -465,8 +465,10 @@ function getIntervalMs(timeframe) {
 export async function fetch24hChange(symbol, exchange, candles) {
   try {
     // For 'auto' or resolver-based sources, derive 24h change from fetched candles
+    // NOTE: 'binance_perps' is intentionally NOT in this list — it has a dedicated
+    // ticker endpoint below that returns the precise rolling 24h change (audit F-14-e-4).
     if (!exchange || exchange === 'auto' || exchange === 'massive' ||
-        ['hyperliquid', 'bybit', 'coingecko', 'lighter', 'binance_perps'].includes(exchange)) {
+        ['hyperliquid', 'bybit', 'coingecko', 'lighter'].includes(exchange)) {
       if (candles && candles.length >= 2) {
         const now = Date.now();
         const target = now - 24 * 60 * 60 * 1000;

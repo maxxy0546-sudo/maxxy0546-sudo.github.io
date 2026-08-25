@@ -93,12 +93,22 @@ jobs:
       # The refresh-snapshot workflow pushes it directly to gh-pages.
       # On first deploy (no gh-pages branch yet), build_snapshot.js creates
       # it in public/ — the next step copies it to dist/ regardless.
+      #
+      # Audit F-14-a-9: write `git show` output to a temp file first, then move
+      # into place ONLY on success. The previous `git show ... > public/snapshot.tradfi.json`
+      # form truncated the freshly-built file to 0 bytes when `git show` failed
+      # (the `>` redirect opens+truncates BEFORE the command runs, and `|| true`
+      # swallowed the failure).
       - name: Fetch snapshot.tradfi.json from gh-pages
         run: |
           if git ls-remote --heads origin gh-pages | grep -q gh-pages; then
             git fetch origin gh-pages --depth=1
-            git show origin/gh-pages:snapshot.tradfi.json > public/snapshot.tradfi.json 2>/dev/null || true
-            echo "✓ Fetched snapshot.tradfi.json from gh-pages branch"
+            if git show origin/gh-pages:snapshot.tradfi.json > /tmp/snapshot.tradfi.json 2>/dev/null; then
+              mv /tmp/snapshot.tradfi.json public/snapshot.tradfi.json
+              echo "✓ Fetched snapshot.tradfi.json from gh-pages branch"
+            else
+              echo "ℹ gh-pages has no snapshot.tradfi.json — using locally built file"
+            fi
           else
             echo "ℹ gh-pages branch doesn't exist yet — using locally built snapshot.tradfi.json"
           fi

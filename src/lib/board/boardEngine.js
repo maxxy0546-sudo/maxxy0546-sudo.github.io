@@ -269,12 +269,23 @@ function computeThemeScoreAtOffset(rawResults, offset) {
     const n = closes.length;
     const ma20 = closes.slice(-20).reduce((a,b)=>a+b,0)/20;
     const ma50 = closes.length >= 50 ? closes.slice(-50).reduce((a,b)=>a+b,0)/50 : null;
+    // Audit F-14-f-1 (2026-08-26): compute ma200 so we can build the
+    // `leadership` component (pctAbove200 + pctNewHigh20) that the main
+    // scoreTheme uses — previously the offset score omitted leadership
+    // entirely, making scoreDelta apples-to-oranges.
+    const ma200 = closes.length >= 200 ? closes.slice(-200).reduce((a,b)=>a+b,0)/200 : null;
     const price = closes[n-1];
     const ret20d = n >= 21 ? (closes[n-1]/closes[n-21] - 1) : null;
+    // New 20-day high? (price equals the max of the trailing 20 closes)
+    const last20 = closes.slice(-20);
+    const max20 = last20.length > 0 ? Math.max(...last20) : null;
+    const newHigh20d = (max20 != null && price >= max20) ? 1 : 0;
     snapshot[r.asset.symbol] = {
       theme: r.asset.theme,
       above_ma20: price > ma20 ? 1 : 0,
       above_ma50: ma50 != null ? (price > ma50 ? 1 : 0) : null,
+      above_ma200: ma200 != null ? (price > ma200 ? 1 : 0) : null,
+      new_high_20d: newHigh20d,
       ret20d,
       rs_btc_20d: ret20d != null ? ret20d - btcRet20dPrior : null,
     };
@@ -292,12 +303,30 @@ function computeThemeScoreAtOffset(rawResults, offset) {
     if (valid.length < 2) continue;
     const pctAbove20 = valid.reduce((s,m)=>s+(m.above_ma20??0),0)/valid.length*100;
     const pctAbove50 = valid.filter(m=>m.above_ma50!=null).reduce((s,m)=>s+(m.above_ma50??0),0)/Math.max(valid.filter(m=>m.above_ma50!=null).length,1)*100;
+    // Audit F-14-f-1: leadership = newHigh20 (60%) + above200 (40%), same
+    // formula as scoreTheme (line 224).
+    const valid200 = valid.filter(m=>m.above_ma200!=null);
+    const pctAbove200 = valid200.length > 0
+      ? valid200.reduce((s,m)=>s+(m.above_ma200??0),0)/valid200.length*100
+      : 0;
+    const pctNewHigh20 = valid.reduce((s,m)=>s+(m.new_high_20d??0),0)/valid.length*100;
     const breadth = (pctAbove20 + pctAbove50) / 2;
+    const leadership = pctNewHigh20 * 0.6 + pctAbove200 * 0.4;
     const avgRet20 = valid.reduce((s,m)=>s+(m.ret20d??0),0)/valid.length;
-    const momentum = scaleTo100(avgRet20, -0.10, 0.15);
+    // Audit F-14-f-2: use crypto momentum scale [-0.20, 0.30] to match
+    // scoreTheme (line 225). Previously hardcoded tradfi scale [-0.10, 0.15]
+    // which saturated crypto +25% moves to 100 in offset but ~78 in current
+    // score — produced artificially-negative scoreDelta for big winners.
+    const momentum = scaleTo100(avgRet20, -0.20, 0.30);
     const avgRsBtc = valid.reduce((s,m)=>s+(m.rs_btc_20d??0),0)/valid.length;
     const rsComponent = Math.max(0, Math.min(100, 50 + avgRsBtc * 500));
-    const score = Math.max(0, Math.min(100, 0.30 * breadth + 0.20 * momentum + 0.50 * rsComponent));
+    // Audit F-14-f-1: 4-component weights now match scoreTheme (line 228-230):
+    // 0.30*breadth + 0.25*leadership + 0.30*momentum + 0.15*rsComponent.
+    // Previously 0.30*breadth + 0.20*momentum + 0.50*rsComponent (no
+    // leadership, different weights, rs overweighted).
+    const score = Math.max(0, Math.min(100,
+      0.30 * breadth + 0.25 * leadership + 0.30 * momentum + 0.15 * rsComponent
+    ));
     scores[theme] = Math.round(score * 10) / 10;
   }
   return scores;

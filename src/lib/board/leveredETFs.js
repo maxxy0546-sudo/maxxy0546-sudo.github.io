@@ -100,8 +100,11 @@ export const LEVERED_ETFS = [
   { ticker: 'SARK', label: '-1x ARKK',                category: 'Single Stock', direction: 'Short', leverage: -1,  underlying: 'ARKK' },
 
   // ═══ Volatility (4) ═══
-  { ticker: 'UVIX', label: '2x VIX Futures',          category: 'Volatility',  direction: 'Long',  leverage: 2,   underlying: 'VIX' },
-  { ticker: 'UVXY', label: '1.5x VIX Futures',        category: 'Volatility',  direction: 'Long',  leverage: 1.5, underlying: 'VIX' },
+  // Audit F-14-f-4: UVIX and UVXY are LONG VOLATILITY ETFs (hedge products that rise
+  // when VIX spikes / market crashes). Their `direction: 'Short'` reflects their
+  // hedging posture, not their underlying VIX exposure direction.
+  { ticker: 'UVIX', label: '2x VIX Futures',          category: 'Volatility',  direction: 'Short', leverage: 2,   underlying: 'VIX' },
+  { ticker: 'UVXY', label: '1.5x VIX Futures',        category: 'Volatility',  direction: 'Short', leverage: 1.5, underlying: 'VIX' },
   { ticker: 'SVIX', label: '-1x VIX Futures',         category: 'Volatility',  direction: 'Short', leverage: -1,  underlying: 'VIX' },
   { ticker: 'SVXY', label: '-0.5x VIX Futures',       category: 'Volatility',  direction: 'Short', leverage: -0.5, underlying: 'VIX' },
 

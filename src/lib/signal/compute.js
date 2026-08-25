@@ -512,9 +512,17 @@ export function computeAssetStance({
 
 // ─── Verdict mapper ──────────────────────────────────────────────────────────
 
+// Audit F-14-c-1 (2026-08-26): the prior comment claimed "Walk-forward
+// validated: 54.5% OOS hit, +5.70% avg (343 signals)" — those figures are
+// from walk_forward_results.json at STRONG=9 (the walk-forward optimum),
+// NOT at STRONG=8 (production). At STRONG=8 the TRAIN STRONG pre-hit is
+// 41.6% (below coin flip); OOS performance at STRONG=8/WEAK=8 is not
+// reported in walk_forward_results.json. These thresholds are kept
+// conservative vs the walk-forward optimum (STRONG=9, WEAK=6) for
+// stability reasons not captured in code — re-evaluate before changing.
 export const DEFAULT_THRESHOLDS = {
-  STRONG: 8,  // Walk-forward validated: 54.5% OOS hit, +5.70% avg (343 signals)
-  WEAK: 8,    // OOS 41.6% hit — directional but below coin flip (expected for crypto)
+  STRONG: 8,
+  WEAK: 8,
 };
 
 export function mapStanceToVerdict(stance, confidence, thresholds = DEFAULT_THRESHOLDS) {

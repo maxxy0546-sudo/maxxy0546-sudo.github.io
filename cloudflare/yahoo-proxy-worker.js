@@ -37,6 +37,24 @@
 
 const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 
+// Audit F-14-b-1: constant-time string comparison for shared-secret tokens.
+// Avoids byte-by-byte timing leaks that would let an attacker recover the token
+// by measuring response latency. Returns true iff strings are byte-equal AND
+// of equal length.
+function timingSafeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) {
+    // Walk b's length anyway so a length-mismatch attacker can't differentiate
+    // "wrong length" from "right length wrong bytes" by timing.
+    let dummy = 0;
+    for (let i = 0; i < b.length; i++) dummy |= b.charCodeAt(i) ^ b.charCodeAt(i % b.length);
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 // Allowlist of origins that may use this proxy (browser CORS check).
 const ALLOWED_ORIGINS = new Set([
   'https://trend-scan.github.io',
@@ -181,10 +199,27 @@ export default {
     //   2. Rotating it is trivial (update secret + redeploy worker + bundle)
     //   3. Combined with rate limiting, it raises the bar high enough to deter
     //      all but the most determined abuse
+    //
+    // Audit F-14-b-1 + F-14-b-2:
+    //   - Use constant-time comparison (timingSafeEqual) instead of `!==` so an attacker
+    //     cannot recover the token byte-by-byte via response-latency measurement.
+    //   - Fail CLOSED when WORKER_TOKEN is unset (previously silently ran without auth).
+    //     Local dev may opt into fail-open by setting env.ALLOW_NO_TOKEN = 'true'.
     const expectedToken = env.WORKER_TOKEN || '';
-    if (expectedToken) {
+    if (!expectedToken) {
+      if (env.ALLOW_NO_TOKEN === 'true') {
+        console.warn('[trendscan-yahoo-proxy] WORKER_TOKEN not set — ALLOW_NO_TOKEN=true, running without token auth (DEV ONLY).');
+      } else {
+        return new Response(JSON.stringify({
+          error: 'Server misconfigured: WORKER_TOKEN not set. Set it via `wrangler secret put WORKER_TOKEN`.',
+        }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+        });
+      }
+    } else {
       const providedToken = request.headers.get('X-TrendScan-Token') || '';
-      if (providedToken !== expectedToken) {
+      if (!timingSafeEqual(providedToken, expectedToken)) {
         return new Response(JSON.stringify({
           error: 'Unauthorized: missing or invalid X-TrendScan-Token header',
         }), {
@@ -195,10 +230,6 @@ export default {
           },
         });
       }
-    } else {
-      // No token configured — log a warning (visible in Cloudflare logs).
-      // In production, WORKER_TOKEN should always be set.
-      console.warn('[trendscan-yahoo-proxy] WORKER_TOKEN not set — running without token auth. Set it via `wrangler secret put WORKER_TOKEN`.');
     }
 
     // Extract symbol from path: /chart/AAPL → AAPL

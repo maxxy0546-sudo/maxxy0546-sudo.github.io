@@ -1,9 +1,15 @@
 /**
- * EnvironmentPanel — displays the environment temperature model + CBOE P/C ratios.
+ * EnvironmentPanel — displays the environment temperature model.
  *
- * Reads from snapshot.environment + snapshot.cboe_pc via useSnapshot.
+ * Reads from snapshot.environment via useSnapshot.
  * Shows: temperature gauge (0-100), verdict, posture, flags, indicator tiles,
- * and CBOE put/call ratios (equity/index/total) with sentiment labels.
+ * and (when present) contributions.
+ *
+ * CBOE Put/Call Ratios section (audit F-14-a-1, 2026-08-26): the CBOE CSV
+ * feed was deprecated in October 2019 — fetchCBOE_PC() is now dormant and
+ * snapshot.cboe_pc is null, so the section below is auto-hidden via the
+ * `cboe && Object.keys(cboe).length > 0` guard. The render path is kept so
+ * a future replacement data source can be re-wired without touching UI.
  *
  * Placement: Macro Regime page, between the Grand Composite row and the
  * Composite Gauges row.

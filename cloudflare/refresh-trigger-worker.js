@@ -67,6 +67,20 @@ const REPO_NAME = 'trend-scan.github.io';
 const WORKFLOW_ID = 'refresh-snapshot.yml'; // can be filename or numeric ID
 const REF = 'main';
 
+// Audit F-14-b-3: constant-time string comparison for the X-Worker-Token shared secret.
+// (See cloudflare/yahoo-proxy-worker.js for the same helper, with rationale.)
+function timingSafeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) {
+    let dummy = 0;
+    for (let i = 0; i < b.length; i++) dummy |= b.charCodeAt(i) ^ b.charCodeAt(i % b.length);
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 // In-memory state (resets on Worker restart, but useful for the fetch handler)
 let _lastDispatch = null;
 let _lastRunId = null;
@@ -213,8 +227,16 @@ export default {
 
     if (url.pathname === '/trigger' && request.method === 'POST') {
       // Manual trigger endpoint — requires token auth
-      const token = request.headers.get('X-Worker-Token');
-      if (!token || token !== env.WORKER_TOKEN) {
+      // Audit F-14-b-3: timing-safe compare + fail-closed when WORKER_TOKEN unset.
+      const token = request.headers.get('X-Worker-Token') || '';
+      const expectedToken = env.WORKER_TOKEN || '';
+      if (!expectedToken) {
+        return new Response(JSON.stringify({ error: 'Server misconfigured: WORKER_TOKEN not set.' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+      if (!token || !timingSafeEqual(token, expectedToken)) {
         return new Response(JSON.stringify({ error: 'Unauthorized: missing or invalid X-Worker-Token header' }), {
           status: 401,
           headers: { 'Content-Type': 'application/json', ...corsHeaders },

@@ -176,11 +176,27 @@ async function analyzeTradFiAsset(asset, settings, candleSource) {
   // For tradfi, volume comes from the candle data itself (Binance/OKX perp volume
   // or snapshot Yahoo volume). cgMarketData is null in tradfi mode.
   if (minVolumeEnabled && minVolume > 0) {
-    // Estimate 24h volume from candle data: take the most recent candle's volume
-    // × price (since candle vol is in base currency for Binance/OKX perps).
-    // For snapshot candles, vol is already in share units × we multiply by price.
+    // Audit F-14-e-2 (2026-08-26): previously took lastCandle.vol × price as
+    // "24h USD volume" — wrong for any non-daily timeframe (4H candle → 4h of
+    // volume, 1H → 1h, 1W → 7-day). Now aggregates (vol × close) over the
+    // trailing 24h window of candles. For 1D candles this is 1 candle ≈ 24h
+    // vol; for 4H it's 6 candles; for 1H it's 24; for 1W the most recent
+    // weekly candle is included wholesale (slight over-estimate, acceptable
+    // since this filter rejects truly illiquid names, not precise 24h figures).
     const lastCandle = cleanCandles[cleanCandles.length - 1];
-    const vol24hUsd = (lastCandle.vol || 0) * price;
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const since = (lastCandle.ts ?? Date.now()) - msPerDay;
+    let vol24hUsd = 0;
+    for (const c of cleanCandles) {
+      if (c.ts != null && c.ts >= since && c.vol != null && c.close != null) {
+        vol24hUsd += (c.vol || 0) * c.close;
+      }
+    }
+    // Fallback: if no candle had a ts (e.g., snapshot candles without ts),
+    // use the most-recent candle's vol × price as before — better than nothing.
+    if (vol24hUsd === 0 && lastCandle) {
+      vol24hUsd = (lastCandle.vol || 0) * price;
+    }
     if (vol24hUsd < minVolume) return null;
   }
 
