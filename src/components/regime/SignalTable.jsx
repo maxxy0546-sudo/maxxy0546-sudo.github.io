@@ -85,10 +85,17 @@ export default function SignalTable({ regime }) {
   const onCountOB = ob1List.filter(s => s.isOn).length;
 
   // BTC above MA50
+  // Audit F-14-d-11 (2026-08-26): previously when btcPrice.length < 50,
+  // btcMA50 fell back to 0, and then `btcPrice[btcPrice.length - 1] > 0`
+  // was true for any valid price — spuriously showing "BTC > MA50" as ON
+  // for histories shorter than 50 days. Now we use null as the MA value
+  // when there's insufficient data, and the comparison returns false.
   const btcMA50 = btcPrice.length > 50
     ? btcPrice.slice(-50).reduce((a, b) => a + b, 0) / 50
-    : 0;
-  const btcAboveMA = btcPrice.length > 0 && btcPrice[btcPrice.length - 1] > btcMA50;
+    : null;
+  const btcAboveMA = btcMA50 != null
+    && btcPrice.length > 0
+    && btcPrice[btcPrice.length - 1] > btcMA50;
 
   return (
     <div

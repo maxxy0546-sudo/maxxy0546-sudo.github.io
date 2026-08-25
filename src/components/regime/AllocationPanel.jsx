@@ -1,11 +1,24 @@
 /**
  * AllocationPanel - TOTAL3ES Crypto Allocation Status
  *
- * Reads allocation data from two sources (prefers server-side):
- *   1. Server-side snapshot (regime_history latest entry) — unified with
- *      Signal page's cash weight. Every user sees the same value.
- *   2. Client-side computed (from live Macro page data) — fallback for
- *      intraday updates between snapshot refreshes.
+ * Reads allocation data from two sources:
+ *   1. Client-side regime object (the live MacroRegime computation) —
+ *      used for ultra6, ob1, core9Score, allocation verdict, vehicle,
+ *      and conviction. Reflects intraday updates between snapshot
+ *      refreshes (e.g. BTC price moves between 4h GHA runs).
+ *   2. Server-side snapshot (regime_history latest entry) — used as the
+ *      default fallback when a field is missing from the live regime
+ *      object, and as the authoritative source for `quadrant` and
+ *      `liquidity` (so every user sees the same season label even
+ *      during intraday price moves).
+ *
+ * Audit F-14-d-12 (2026-08-26): previous docstring claimed 'prefers
+ * server-side' which was misleading — only quadrant/liquidity actually
+ * prefer server-side. The score fields (ultra6, ob1, core9Score) and
+ * allocation verdict come from the live regime object when it is
+ * provided, because intraday BTC moves change the score between
+ * 4h snapshot refreshes. Server-side is the fallback when the live
+ * regime hasn't loaded yet (e.g. FRED fetch in-flight on first paint).
  */
 
 import React, { useState, useEffect } from 'react';

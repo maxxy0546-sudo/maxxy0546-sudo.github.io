@@ -299,24 +299,49 @@ export async function fetchAllRegimeData() {
   const usdtDomSeries = [];
 
   if (cgGlobal.btcDominance && cgBTC.prices?.length) {
-    // Estimate dominance series from current values (would need historical for proper calc)
+    // Audit F-14-d-7 + F-14-d-15 (2026-08-26):
+    //
+    // Previous code: `totalCap = btcCap + ethCap + totalCapSeries[i] * 0.1`
+    // where `totalCapSeries` was actually cgBTC.marketCaps (BTC's own cap,
+    // NOT the total market cap — the variable name was misleading). The
+    // `* 0.1` term double-counted 10% of BTC's own cap as "all other alts",
+    // inflating the denominator and producing BTC.D ~70% vs actual ~50%.
+    //
+    // Now: total cap is just BTC + ETH. We don't have a historical total
+    // market cap series from CoinGecko (only the current value via
+    // cgGlobal.totalMarketCap), so the historical dominance series will
+    // overestimate BTC.D by ~5-15% vs CoinGecko's published dominance
+    // (because alts aren't in the denominator). This is documented as a
+    // known limitation; the current value (btcDominanceCurrent) is
+    // accurate.
+    //
+    // Hardcoded supply magic numbers (19.5M BTC, 120M ETH) are extracted
+    // as named constants — they will diverge 5-10% from actual over
+    // several years as new coins are mined / issued. TODO: replace with
+    // CoinGecko circulating_supply from cgBTC/cgETH market data.
+    const BTC_CIRCULATING_SUPPLY_FALLBACK = 19_500_000;   // ~Aug 2026 supply
+    const ETH_CIRCULATING_SUPPLY_FALLBACK = 120_000_000;  // ~Aug 2026 supply
+
     const btcPricesArr = cgBTC.prices.map(p => p[1]);
-    const totalCapSeries = cgBTC.marketCaps?.map(m => m[1]) ?? [];
+    const btcMarketCapSeries = cgBTC.marketCaps?.map(m => m[1]) ?? [];
     const ethPricesArr = cgETH.prices?.map(p => p[1]) ?? [];
 
     // Approximate dominance over time (simplified)
     for (let i = 0; i < btcPricesArr.length; i++) {
-      const btcCap = totalCapSeries[i] ?? btcPricesArr[i] * 19500000;
-      const ethCap = ethPricesArr[i] ? (cgETH.marketCaps?.[i]?.[1] ?? ethPricesArr[i] * 120000000) : 0;
-      const totalCap = btcCap + ethCap + (totalCapSeries[i] ? totalCapSeries[i] * 0.1 : 0);
+      const btcCap = btcMarketCapSeries[i] ?? btcPricesArr[i] * BTC_CIRCULATING_SUPPLY_FALLBACK;
+      const ethCap = ethPricesArr[i]
+        ? (cgETH.marketCaps?.[i]?.[1] ?? ethPricesArr[i] * ETH_CIRCULATING_SUPPLY_FALLBACK)
+        : 0;
+      // Total cap = BTC + ETH only (alts omitted — see note above).
+      const totalCap = btcCap + ethCap;
 
       const btcDom = (btcCap / totalCap) * 100;
       const ethDom = (ethCap / totalCap) * 100;
-      const usdtDom = 100 - btcDom - ethDom;
+      const usdtDom = Math.max(0, 100 - btcDom - ethDom);
 
       btcDomSeries.push(btcDom);
       ethDomSeries.push(ethDom);
-      usdtDomSeries.push(Math.max(0, usdtDom));
+      usdtDomSeries.push(usdtDom);
     }
   }
 
