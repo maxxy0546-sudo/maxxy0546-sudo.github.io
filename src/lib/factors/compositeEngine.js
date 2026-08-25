@@ -122,9 +122,21 @@ export function computeFactorStance({
   const passCount = Object.values(gates).filter(Boolean).length;
 
   // Determine stance and confidence
+  //
+  // F-14-b-8 (2026-08-26): DEFENSIVE branch moved to the TOP of the chain.
+  // Previously it sat at position #5, after the (stretch + persistence +
+  // crowding) combos already caught every stretched signal — so DEFENSIVE
+  // was unreachable for genuinely breaking-down factors (negative z).
+  // Now DEFENSIVE catches `stretch && z<0` first, so a factor with a
+  // negative z-score ≥ |2.0| is correctly labeled DEFENSIVE regardless of
+  // its persistence or crowding state.
   let stance, confidence;
 
-  if (gates.stretch && gates.persistence && gates.crowding) {
+  if (gates.stretch && z < 0) {
+    // Negative stretch (factor breaking down) — DEFENSIVE
+    stance = STANCE.DEFENSIVE;
+    confidence = 6;
+  } else if (gates.stretch && gates.persistence && gates.crowding) {
     // Full conviction: stretched + confirmed + not crowded
     stance = STANCE.CONSTRUCTIVE;
     confidence = gates.breadth ? 9 : 7;
@@ -140,10 +152,6 @@ export function computeFactorStance({
     // Confirmed leader but not stretched → maintain but don't add
     stance = STANCE.SELECTIVE;
     confidence = 5;
-  } else if (gates.stretch && z < 0) {
-    // Negative stretch (factor breaking down)
-    stance = STANCE.DEFENSIVE;
-    confidence = 6;
   } else {
     // Nothing significant
     stance = STANCE.WAIT;

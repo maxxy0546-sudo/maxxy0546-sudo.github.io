@@ -109,6 +109,11 @@ export async function rebuildTradDataFromFreshSnapshot() {
 // The proxy is needed because Yahoo doesn't send CORS headers.
 // Configure: localStorage.setItem('YAHOO_PROXY_URL', 'https://your-worker.workers.dev')
 // Or: VITE_YAHOO_PROXY_URL in GitHub Actions secrets
+//
+// F-14-e-6 / F-14-f-6 (2026-08-26) — Known SPOF: the default worker URL
+// points to a personal Cloudflare account (drew-724.workers.dev). See
+// src/lib/scanner/sources/yahooCrypto.js header for the full mitigation
+// analysis. User decision (F-14-e-6 option (c)): accept SPOF, document.
 function getYahooProxyUrl() {
   if (typeof window !== 'undefined') {
     const local = localStorage.getItem('YAHOO_PROXY_URL');

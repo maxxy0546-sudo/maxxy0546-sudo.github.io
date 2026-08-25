@@ -341,31 +341,50 @@ describe('Composite engine', () => {
     assert.equal(r.position.length, candles.length);
   });
 
-  test('composite values are finite numbers', () => {
+  test('composite values are finite numbers after warmup, null during', () => {
+    // F-14-c-6 (2026-08-26): composite is null during warmup (~zsc_len + lb
+    // - 2 = 83 bars with default params) and finite after. Bars 0..82 should
+    // be null; bars 83+ should be finite.
     const candles = buildCandles(200);
     const r = computeOrthoS(candles);
-    for (let i = 100; i < candles.length; i++) {
+    const warmupBars = DEFAULT_PARAMS.zsc_len + DEFAULT_PARAMS.lb - 2;  // 83
+    // During warmup: composite[i] should be null
+    for (let i = 0; i < warmupBars; i++) {
+      assert.equal(r.composite[i], null,
+        `composite[${i}] should be null during warmup (warmupBars=${warmupBars}), got ${r.composite[i]}`);
+    }
+    // After warmup: composite[i] should be a finite number
+    for (let i = warmupBars + 5; i < candles.length; i++) {
       assert.ok(Number.isFinite(r.composite[i]), `composite[${i}] is not finite: ${r.composite[i]}`);
     }
   });
 
-  test('custom weights are respected', () => {
+  test('custom weights are respected (after warmup)', () => {
+    // F-14-c-6: composite is null during warmup. Bar 150 is past warmup
+    // (zsc_len=80 + lb=5 = 85), so composite[150] should be finite.
     const candles = buildCandles(200);
     const r1 = computeOrthoS(candles, { weights: { vol_ratio: 1, bb_width: 0, rsi_signal: 0, zscore_20: 0, mom_6: 0, mom_18: 0, ema_cross: 0, hl_mom: 0, taker_ratio: 0 } });
     const r2 = computeOrthoS(candles, { weights: { vol_ratio: 0, bb_width: 1, rsi_signal: 0, zscore_20: 0, mom_6: 0, mom_18: 0, ema_cross: 0, hl_mom: 0, taker_ratio: 0 } });
     // With only one signal weighted, composite should equal that signal's smoothed z-score
     // (weighted average of one non-zero value = that value)
+    assert.ok(r1.composite[150] != null, 'r1.composite[150] should not be null (past warmup)');
+    assert.ok(r2.composite[150] != null, 'r2.composite[150] should not be null (past warmup)');
     assert.ok(Math.abs(r1.composite[150] - r1.smoothed.vol_ratio[150]) < 0.001);
     assert.ok(Math.abs(r2.composite[150] - r2.smoothed.bb_width[150]) < 0.001);
   });
 
-  test('all-zero weights produces zero composite', () => {
+  test('all-zero weights produces null composite (no signals contribute)', () => {
+    // F-14-c-6 (2026-08-26): With all weights = 0, wtSum = 0 and the
+    // composite loop is skipped entirely. composite stays at its init
+    // value (null) — same as Pine Script's ta.sma returning NaN when
+    // the input has zero weight to average.
     const candles = buildCandles(200);
     const weights = {};
     for (const name of SIGNAL_NAMES) weights[name] = 0;
     const r = computeOrthoS(candles, { weights });
     for (let i = 0; i < candles.length; i++) {
-      assert.equal(r.composite[i], 0);
+      assert.equal(r.composite[i], null,
+        `composite[${i}] should be null when no signals contribute, got ${r.composite[i]}`);
     }
   });
 });
@@ -430,21 +449,29 @@ describe('Position derivation', () => {
 // ─── 6. Edge cases ──────────────────────────────────────────────────────────
 
 describe('Edge cases', () => {
-  test('handles constant series without NaN', () => {
+  test('handles constant series (null during warmup, finite after)', () => {
+    // F-14-c-6: composite is null during warmup, then finite (0 for constant
+    // series — all signals are 0, so the weighted average is 0).
     const candles = buildFlatCandles(200);
     const r = computeOrthoS(candles);
     for (let i = 0; i < candles.length; i++) {
-      assert.ok(Number.isFinite(r.composite[i]), `composite[${i}] is NaN on flat series`);
+      assert.ok(r.composite[i] === null || Number.isFinite(r.composite[i]),
+        `composite[${i}] is neither null nor finite on flat series: ${r.composite[i]}`);
       assert.ok(Number.isFinite(r.pivot_sig[i]), `pivot_sig[${i}] is NaN on flat series`);
     }
   });
 
   test('handles insufficient data (< 80 bars for zsc_len)', () => {
+    // F-14-c-6: With 50 bars and zsc_len=80, stdev returns null for ALL bars,
+    // so rollZscore falls back to 0 (its null-guard). sma(z=0, lb=5) returns
+    // null for i<4 and 0 for i>=4. composite[i] is therefore null during
+    // the sma warmup (i<4) and 0 afterwards. Both states are valid.
     const candles = buildCandles(50);
     const r = computeOrthoS(candles);
-    // Should not crash, composite should still be finite
+    // Should not crash; composite is either null (warmup) or finite (0).
     for (let i = 0; i < candles.length; i++) {
-      assert.ok(Number.isFinite(r.composite[i]));
+      assert.ok(r.composite[i] === null || Number.isFinite(r.composite[i]),
+        `composite[${i}] is neither null nor finite: ${r.composite[i]}`);
     }
   });
 

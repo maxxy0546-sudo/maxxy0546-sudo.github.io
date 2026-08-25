@@ -71,6 +71,9 @@ export default function FactorMonitor() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [snapshotLoaded, setSnapshotLoaded] = useState(false);
+  // F-14-b-6: status message for the live-refresh button (e.g., "already
+  // up-to-date" when the freshness check aborts the refresh).
+  const [liveRefreshMessage, setLiveRefreshMessage] = useState(null);
 
   const [hasLoaded, setHasLoaded] = useState(false);
 
@@ -105,23 +108,37 @@ export default function FactorMonitor() {
           },
         } : null;
 
-        // Use server-side stances if available, otherwise compute client-side
+        // F-14-b-6 (2026-08-26): USE the server's computed stances directly
+        // instead of recomputing them client-side. The server now uses the
+        // canonical `computeFactorStance` from compositeEngine.js (same
+        // function the client would call), so the snapshot's `cf.stances`
+        // field already contains the full FactorStance shape (stance,
+        // confidence, rationale, color, gates, raw) — no need to recompute.
+        // This eliminates the drift between server and client stance logic.
         let stances = {};
         if (cf.stances) {
-          // Server computed stances — recompute with full stance object
+          // Server-computed stances — use directly.
           for (const row of (cf.spread_monitor || [])) {
-            const spread20d = row.spread_20d || {};
             const serverStance = cf.stances[row.factor];
-            stances[row.factor] = computeFactorStance({
-              spreadZ: spread20d.z,
-              spreadPctile: spread20d.pctile,
-              rotation: confirmedRotation.currentLabel === row.factor ? confirmedRotation : null,
-              crowdingScore: serverCrowding?.max_correlations?.[row.factor],
-              factorName: row.factor,
-            });
+            if (serverStance) {
+              stances[row.factor] = serverStance;
+            } else {
+              // Missing in server stances — fall back to client computation
+              // (handles the rare case of a factor being added to spread_monitor
+              // but not to stances due to a partial snapshot).
+              const spread20d = row.spread_20d || {};
+              stances[row.factor] = computeFactorStance({
+                spreadZ: spread20d.z,
+                spreadPctile: spread20d.pctile,
+                rotation: confirmedRotation.currentLabel === row.factor ? confirmedRotation : null,
+                crowdingScore: serverCrowding?.max_correlations?.[row.factor],
+                factorName: row.factor,
+              });
+            }
           }
         } else {
-          // Fallback: compute from snapshot spread data
+          // Fallback: snapshot has no server stances — compute client-side
+          // (legacy snapshot support).
           for (const row of (cf.spread_monitor || [])) {
             const spread20d = row.spread_20d || {};
             stances[row.factor] = computeFactorStance({
@@ -138,6 +155,12 @@ export default function FactorMonitor() {
           .sort(([,a], [,b]) => b.confidence - a.confidence)[0];
 
         if (!cancelled) {
+          // F-14-b-6 (2026-08-26): record the snapshot's build timestamp so
+          // the live-refresh button can freshness-check before replacing any
+          // displayed data. The live refresh should only replace if the
+          // freshly-fetched candle data is actually newer than the snapshot;
+          // otherwise the snapshot is already up-to-date and replacing it
+          // would discard the server's authoritative values for no benefit.
           setData({
             spreadMonitor: cf.spread_monitor || [],
             rotation: {
@@ -159,6 +182,7 @@ export default function FactorMonitor() {
             universeSize: cf.universe_size || 100,
             q5Size: Math.floor((cf.universe_size || 100) / 5),
             fromSnapshot: true,
+            snapshotTimestamp: cf.timestamp || null,  // for live-refresh freshness check
           });
           setSnapshotLoaded(true);
         }
@@ -325,7 +349,39 @@ export default function FactorMonitor() {
 
 
 
+        // F-14-b-6 (2026-08-26): Freshness guard. The live refresh button is
+        // user-initiated, but we still check whether the freshly-fetched data
+        // is actually newer than the snapshot before replacing the displayed
+        // data. If the snapshot was just rebuilt (within the last few minutes)
+        // and the live fetch's freshest candle is the same age or older, we
+        // abort and leave all snapshot data intact — "snapshot is already
+        // up-to-date". This prevents the live refresh from discarding the
+        // server's authoritative values for no benefit.
+        //
+        // Compare the freshest candle's timestamp (live fetch) with the
+        // snapshot's build timestamp (cf.timestamp stored in data.snapshotTimestamp).
+        const liveLatestTs = universe.reduce((max, u) => {
+          const last = u.candles?.[u.candles.length - 1]?.ts || 0;
+          return Math.max(max, last);
+        }, 0);
+        const snapshotTs = data?.snapshotTimestamp
+          ? new Date(data.snapshotTimestamp).getTime()
+          : 0;
+        if (snapshotTs > 0 && liveLatestTs <= snapshotTs) {
+          // Live fetch is NOT fresher than snapshot — leave all snapshot data intact.
+          if (!cancelled) {
+            setLiveRefreshMessage('ℹ Snapshot is already up-to-date — no refresh needed.');
+            setLoading(false);
+          }
+          return;
+        }
+
         if (!cancelled) {
+          // Freshness check passed: live data is newer than snapshot.
+          // Replace all displayed data with fresh values (existing behavior).
+          // Other snapshot fields are NOT preserved here because the user
+          // explicitly requested a refresh AND the fresh data is confirmed
+          // newer — replacing wholesale is the right call.
           setData({
             spreadMonitor: Object.values(spreadMonitor),
             rotation: snapshotRotation,
@@ -336,7 +392,9 @@ export default function FactorMonitor() {
             primarySignal,
             universeSize: universe.length,
             q5Size: Math.floor(universe.length / 5),
+            snapshotTimestamp: data?.snapshotTimestamp || null,  // preserve for next refresh
           });
+          setLiveRefreshMessage('✓ Refreshed with live data.');
           setLoading(false);
         }
       } catch (e) {
@@ -448,13 +506,22 @@ export default function FactorMonitor() {
         <div className="flex items-center gap-3">
           {!hasLoaded && data && (
             <button
-              onClick={() => { setHasLoaded(true); setLoading(true); }}
+              onClick={() => {
+                setHasLoaded(true);
+                setLoading(true);
+                setLiveRefreshMessage(null);  // F-14-b-6: clear stale status
+              }}
               className="font-mono text-[9px] font-bold tracking-wide px-3 py-1.5 rounded"
               style={{ background: 'var(--scanner-bg2)', color: 'var(--scanner-text3)', border: '1px solid var(--scanner-border2)', cursor: 'pointer' }}
               title="Fetch fresh candles from exchange APIs (snapshot refreshes every 4h via Cloudflare cron)"
             >
               ↻ LIVE REFRESH
             </button>
+          )}
+          {liveRefreshMessage && (
+            <span className="font-mono text-[9px]" style={{ color: 'var(--scanner-text3)' }}>
+              {liveRefreshMessage}
+            </span>
           )}
           <div className="text-right">
             <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--scanner-text3)' }}>20D Leader</div>

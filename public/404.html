@@ -3,7 +3,46 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TrendScan</title>
+
+    <!--
+      F-14-g-1 (2026-08-26): Per-route OG meta tags.
+      GitHub Pages serves this 404.html for unmatched paths, including the
+      SPA sub-routes (/board, /macro, /signal) before the JS redirect fires.
+      Link-preview crawlers (Twitter, Slack, Discord, LinkedIn) and SEO bots
+      see this HTML first — without OG tags they render an empty 404 card.
+
+      The script tag below still redirects JS-capable browsers to the SPA,
+      but non-JS clients now get meaningful meta tags per-route. The route
+      detection is intentionally simple (pathname.startsWith) — no DOM
+      parsing needed, runs inline before any render.
+    -->
+    <script>
+      // Pick route-specific OG tags based on the path BEFORE setting the
+      // document title — this way crawlers that read <head> inline see the
+      // correct meta tags for the requested route.
+      var path = window.location.pathname;
+      var routeConfig = {
+        '/board':  { title: 'TrendScan — Board',                       description: 'Daily market board with factor signals, breadth, momentum scans, and thematic exposure for crypto + tradfi.' },
+        '/macro':  { title: 'TrendScan — Macro Regime Monitor',       description: 'Three-composite nowcasting engine (growth, inflation, liquidity) with TOTAL3ES allocation signals.' },
+        '/signal': { title: 'TrendScan — Signal Engine',              description: 'STRONG / WEAK / NEUTRAL verdicts for BTC, Majors, and Cash, derived from a 9-signal orthogonal trading system.' },
+      };
+      var cfg = routeConfig[path] || { title: 'TrendScan — Page Not Found', description: 'The page you requested does not exist. Redirecting to the TrendScan home page.' };
+      document.title = cfg.title;
+      // Set meta tags via document.write (runs synchronously before <body>)
+      document.write(
+        '<meta name="description" content="' + cfg.description + '" />',
+        '<meta property="og:title" content="' + cfg.title + '" />',
+        '<meta property="og:description" content="' + cfg.description + '" />',
+        '<meta property="og:type" content="website" />',
+        '<meta property="og:url" content="https://trend-scan.github.io' + path + '" />',
+        '<meta property="og:image" content="https://trend-scan.github.io/og-image.png" />',
+        '<meta name="twitter:card" content="summary" />',
+        '<meta name="twitter:title" content="' + cfg.title + '" />',
+        '<meta name="twitter:description" content="' + cfg.description + '" />',
+        '<meta name="twitter:image" content="https://trend-scan.github.io/og-image.png" />'
+      );
+    </script>
+
     <script>
       // GitHub Pages SPA fallback: redirect all paths to index.html
       // so React Router can handle them

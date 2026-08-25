@@ -14,6 +14,30 @@
  * are tried first. Only used as a fallback.
  *
  * Data: daily OHLCV, up to 1 year history.
+ *
+ * F-14-e-6 (2026-08-26) — Known SPOF (single point of failure):
+ * The default PROXY_URL points to a personal Cloudflare Worker account
+ * (drew-724.workers.dev). If that account is suspended, the worker is
+ * deleted, or the free-tier quota is exceeded, ALL Yahoo fetching silently
+ * breaks — the Board's price-change column for tradfi symbols (SPY, QQQ,
+ * etc.) goes empty until the worker is restored.
+ *
+ * Mitigation (NOT implemented — user decision F-14-e-6 option (c)):
+ *   - Option (a): move worker to project-owned Cloudflare account, expose
+ *     URL via build-time env var (VITE_YAHOO_PROXY_URL).
+ *   - Option (b): keep on personal account but make URL configurable via
+ *     runtime config (localStorage override — already supported).
+ *   - Option (c): accept SPOF (current behavior). User chose this because
+ *     the worker has been stable for 6+ months and moving it requires
+ *     Cloudflare account migration overhead.
+ *
+ * Recovery if the worker breaks:
+ *   1. Set VITE_YAHOO_PROXY_URL in GitHub Actions secrets to a new worker
+ *      URL on a different Cloudflare account.
+ *   2. OR: per-user override via localStorage.setItem('YAHOO_PROXY_URL', '...')
+ *   3. The board will still function — Yahoo is the lowest-priority source
+ *      in the resolver chain; CoinGecko/Binance/Kraken cover crypto, and
+ *      massive.js (Polygon) covers tradfi when API key is configured.
  */
 
 import { fetchWithTimeout } from '../fetchWithTimeout';

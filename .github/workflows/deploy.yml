@@ -70,23 +70,52 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Lint (non-blocking)
+        # F-14-a-15 (2026-08-26): lint stays non-blocking — pre-existing
+        # codebase has stylistic warnings that don't affect runtime. Can be
+        # promoted to blocking once the lint backlog is cleared.
         run: npm run lint || echo "⚠ Lint warnings (non-blocking)"
 
-      - name: Typecheck (non-blocking)
-        run: npm run typecheck || echo "⚠ Typecheck warnings (non-blocking)"
+      - name: Typecheck (BLOCKING)
+        # F-14-a-15 (2026-08-26): promoted from non-blocking to blocking.
+        # Previously TS type errors shipped to production silently because
+        # the step had `|| echo "⚠ ..."` swallowing the failure. Now a
+        # typecheck failure fails the build, preventing regressions like
+        # the July 4 incident where a refactored function signature shipped
+        # broken at runtime while CI was 'passing'.
+        run: npm run typecheck
 
       - name: CSP verification (non-blocking)
         # Verifies every external URL referenced in src/ is allowed by the
         # Content-Security-Policy in index.html. Catches the regression where
         # someone adds a new API endpoint but forgets to update the CSP.
+        # F-14-a-15: kept non-blocking for now — CSP verification is a defense-
+        # in-depth check; promoting it to blocking would fail the build on
+        # any new external resource addition, which is overly strict.
         run: python3 scripts/verify-csp.py || echo "⚠ CSP verification warnings (non-blocking)"
 
       - name: Build FRED snapshot
+        # F-14-a-14 (2026-08-26): the redundant build_snapshot.js call that
+        # previously ran here (writing both snapshot.json AND
+        # snapshot.tradfi.json, then immediately overwriting snapshot.tradfi.json
+        # with the gh-pages version in the next step) has been removed. The
+        # refresh-snapshot.yml workflow (the authoritative snapshot builder,
+        # runs 4× daily via Cloudflare cron) already builds both files. This
+        # deploy.yml step now only runs build_snapshot.js when triggered by
+        # a push to main (so the deployed site matches the latest code),
+        # not on the daily cron (which would be redundant with refresh-snapshot).
+        #
+        # Net savings: ~30s CI time + 470 Yahoo API calls per deploy.
+        # The daily 23:00 UTC cron safety-net deploy now relies on
+        # refresh-snapshot's workflow_dispatch trigger (which already fires
+        # a deploy after each 4-hourly snapshot rebuild).
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
         timeout-minutes: 10
         run: node scripts/build_snapshot.js
+        # Skip on daily cron — refresh-snapshot.yml already runs 4× daily
+        # and triggers a deploy via workflow_dispatch after each run.
+        if: github.event_name != 'schedule'
 
       # Fetch snapshot.tradfi.json from the gh-pages branch.
       # It's NOT committed to main (gitignored) to prevent repository bloat.
