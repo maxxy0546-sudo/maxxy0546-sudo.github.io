@@ -2158,9 +2158,22 @@ async function main() {
   let cmcTrending = _prevSnapshot?.cmc_trending || { trending: [], gainers: [], losers: [], mostVisited: [], community: [] };
 
   // If crypto_universe is empty (CMC + CoinGecko both failed), reuse previous snapshot's
+  //
+  // F-14-a-7 (2026-08-26): added 24h age limit. Previously crypto_universe
+  // could be served indefinitely stale during a multi-day CMC + CoinGecko
+  // outage — Board's price-change column and factor monitor would show
+  // week-old prices with no warning. 24h matches the snapshot refresh cadence
+  // (4× daily via Cloudflare cron) — if the previous snapshot is older than
+  // 24h, something is deeply wrong and we'd rather show empty data than
+  // silently-stale data.
   if ((!cryptoUniverse || Object.keys(cryptoUniverse).length < 400) && _prevSnapshot?.crypto_universe) {
-    console.log('  ⚠ crypto_universe empty — using previous snapshot (stale)');
-    cryptoUniverse = _prevSnapshot.crypto_universe;
+    const prevAge = Date.now() - new Date(_prevSnapshot.timestamp || _prevSnapshot.lastUpdated || Date.now()).getTime();
+    if (prevAge < 24 * 60 * 60 * 1000) {  // < 24h old (price data — short freshness requirement)
+      console.log(`  ⚠ crypto_universe empty — using previous snapshot (stale but <24h, age=${Math.round(prevAge / 60 / 60 / 1000)}h)`);
+      cryptoUniverse = _prevSnapshot.crypto_universe;
+    } else {
+      console.log(`  ⚠ crypto_universe empty AND previous snapshot is ${Math.round(prevAge / 60 / 60 / 1000)}h old — leaving empty (stale >24h)`);
+    }
   }
 
   // Audit F-14-a-6 (2026-08-26): coingecko_top had no stale-data fallback.
@@ -2209,15 +2222,33 @@ async function main() {
     globalMetrics = _prevSnapshot.global_metrics;
   }
   if ((!binanceOI || Object.keys(binanceOI).length < 100) && _prevSnapshot?.binance_oi) {
-    console.log('  ⚠ binance_oi empty — using previous snapshot (stale)');
-    binanceOI = _prevSnapshot.binance_oi;
+    // F-14-a-7 (2026-08-26): 24h age limit — binance_oi is price-derived
+    // (open interest values), same short-freshness requirement as crypto_universe.
+    const prevAge = Date.now() - new Date(_prevSnapshot.timestamp || _prevSnapshot.lastUpdated || Date.now()).getTime();
+    if (prevAge < 24 * 60 * 60 * 1000) {
+      console.log(`  ⚠ binance_oi empty — using previous snapshot (stale but <24h, age=${Math.round(prevAge / 60 / 60 / 1000)}h)`);
+      binanceOI = _prevSnapshot.binance_oi;
+    } else {
+      console.log(`  ⚠ binance_oi empty AND previous snapshot is ${Math.round(prevAge / 60 / 60 / 1000)}h old — leaving empty (stale >24h)`);
+    }
   }
 
   // If FRED data is empty (API failure), use previous snapshot's FRED data
+  //
+  // F-14-a-7 (2026-08-26): 7-day age limit for FRED (macro data — slower-moving
+  // than price data, 7d freshness is acceptable). Macro series like M2, CPI,
+  // Fed balance sheet update weekly/monthly, so 7d stale is tolerable. Beyond
+  // 7d the macro regime engine would be operating on outdated inputs and could
+  // misclassify the regime.
   const fredPopulated = Object.values(fred).filter(v => Array.isArray(v) && v.length > 0).length;
   if (fredPopulated === 0 && _prevSnapshot?.fred) {
-    console.log('  ⚠ FRED data empty — using previous snapshot (stale)');
-    fred = _prevSnapshot.fred;
+    const prevAge = Date.now() - new Date(_prevSnapshot.timestamp || _prevSnapshot.lastUpdated || Date.now()).getTime();
+    if (prevAge < 7 * 24 * 60 * 60 * 1000) {  // < 7 days old (macro data — slower-moving)
+      console.log(`  ⚠ FRED data empty — using previous snapshot (stale but <7d, age=${Math.round(prevAge / 60 / 60 / 1000)}h)`);
+      fred = _prevSnapshot.fred;
+    } else {
+      console.log(`  ⚠ FRED data empty AND previous snapshot is ${Math.round(prevAge / 60 / 60 / 24 / 1000)}d old — leaving empty (stale >7d)`);
+    }
   }
 
   // Compute regime history server-side (appends today's nowcast to a 90-day rolling array)
