@@ -11,6 +11,10 @@
  * Schedule:
  *   Every 4 hours, 24/7 (6 fires per day). Cron expression:
  *     0 0/4 * * *    (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+ *     (Audit F-14-b-15: written as `0 0/4` rather than the equivalent
+ *     `0 * /4` form (the space is intentional) to avoid the JSDoc star-slash
+ *     comment-terminator sequence. Both cron forms are accepted by Cloudflare;
+ *     see REFRESH_TRIGGER_SETUP.md.)
  *   Cloudflare cron uses standard 5-field Unix cron syntax.
  *   More frequent than the GitHub Actions cron (0 4,10,16,22 * * *) it backs
  *   up — keeps the snapshot from ever going more than 4h stale.
@@ -30,7 +34,7 @@
  *        GH_TOKEN = <your GitHub PAT>
  *   5. Click "Deploy"
  *   6. Go to the Triggers tab → Cron Triggers → Add cron trigger:
- *        Cron expression: 0 0/4 * * *
+ *        Cron expression: 0 0/4 * * *  (see note above re: form)
  *   7. (Optional) Set NOTIFY_WEBHOOK for failure alerts
  *
  * Why this is needed:
@@ -66,6 +70,20 @@ const REPO_OWNER = 'trend-scan';
 const REPO_NAME = 'trend-scan.github.io';
 const WORKFLOW_ID = 'refresh-snapshot.yml'; // can be filename or numeric ID
 const REF = 'main';
+
+// Audit F-14-b-3: constant-time string comparison for the X-Worker-Token shared secret.
+// (See cloudflare/yahoo-proxy-worker.js for the same helper, with rationale.)
+function timingSafeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) {
+    let dummy = 0;
+    for (let i = 0; i < b.length; i++) dummy |= b.charCodeAt(i) ^ b.charCodeAt(i % b.length);
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
 
 // In-memory state (resets on Worker restart, but useful for the fetch handler)
 let _lastDispatch = null;
@@ -213,8 +231,16 @@ export default {
 
     if (url.pathname === '/trigger' && request.method === 'POST') {
       // Manual trigger endpoint — requires token auth
-      const token = request.headers.get('X-Worker-Token');
-      if (!token || token !== env.WORKER_TOKEN) {
+      // Audit F-14-b-3: timing-safe compare + fail-closed when WORKER_TOKEN unset.
+      const token = request.headers.get('X-Worker-Token') || '';
+      const expectedToken = env.WORKER_TOKEN || '';
+      if (!expectedToken) {
+        return new Response(JSON.stringify({ error: 'Server misconfigured: WORKER_TOKEN not set.' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+      if (!token || !timingSafeEqual(token, expectedToken)) {
         return new Response(JSON.stringify({ error: 'Unauthorized: missing or invalid X-Worker-Token header' }), {
           status: 401,
           headers: { 'Content-Type': 'application/json', ...corsHeaders },

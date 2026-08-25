@@ -48,10 +48,15 @@ const ROOT = path.resolve(__dirname, '..');
 const FRED_API_KEY = process.env.FRED_API_KEY;
 
 // Load previous snapshot for stale-data fallback
+// Audit F-14-a-16: log parse failures so silent history-reset is visible.
 let _prevSnapshot = null;
 try {
   _prevSnapshot = JSON.parse(fs.readFileSync(path.join(ROOT, "public", "snapshot.json"), "utf8"));
-} catch {}
+} catch (e) {
+  if (fs.existsSync(path.join(ROOT, "public", "snapshot.json"))) {
+    console.warn(`⚠ Could not parse previous snapshot.json: ${e.message} — rolling histories will reset.`);
+  }
+}
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY;
 
 if (!FRED_API_KEY) {
@@ -76,18 +81,28 @@ const FRED_SERIES = {
 
 // ─── Fetch helpers ───────────────────────────────────────────────────────────
 
+// Audit F-14-a-5: redact api_key query param from error messages so secrets are
+// not leaked to stdout/stderr (and thus GitHub Actions logs).
+function redactUrl(u) {
+  return u.replace(/([?&])(api_key|apikey|token|access_token)=([^&]*)/g, '$1$2=***');
+}
+
+// Audit F-14-a-8: default 15s timeout via AbortSignal.timeout so a single hung
+// endpoint cannot consume the entire workflow timeout-minutes: 10 budget.
 async function fetchJson(url, opts = {}) {
-  const res = await fetch(url, opts);
+  const signal = opts.signal || AbortSignal.timeout(15000);
+  const res = await fetch(url, { ...opts, signal });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} ${res.statusText}: ${url}`);
+    throw new Error(`HTTP ${res.status} ${res.statusText}: ${redactUrl(url)}`);
   }
   return res.json();
 }
 
 async function fetchText(url, opts = {}) {
-  const res = await fetch(url, opts);
+  const signal = opts.signal || AbortSignal.timeout(15000);
+  const res = await fetch(url, { ...opts, signal });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} ${res.statusText}: ${url}`);
+    throw new Error(`HTTP ${res.status} ${res.statusText}: ${redactUrl(url)}`);
   }
   return res.text();
 }
@@ -105,6 +120,8 @@ async function safeFetchJson(label, url, opts) {
 
 async function fetchFredSeries(seriesId, limit) {
   if (!FRED_API_KEY) return [];
+  // Audit F-14-a-5: the api_key is in the URL, but fetchJson's redactUrl() will strip
+  // it from any thrown error message before it hits stdout/stderr.
   const url = `https://api.stlouisfed.org/fred/series/observations` +
     `?series_id=${seriesId}` +
     `&api_key=${FRED_API_KEY}` +
@@ -1525,10 +1542,24 @@ async function computeRegimeHistory(fred, coingecko, fearGreed, cgHistorical, _p
 }
 
 // ─── CBOE Put/Call Ratio Ingestion ───────────────────────────────────────────
-// Fetches 3 free public CBOE CSVs daily: equity P/C, index P/C, total P/C.
-// These are free, no API key required, updated end-of-day by CBOE.
-// Stored as snapshot.cboe_pc with latest + 10D SMA + sentiment label.
-
+// Audit F-14-a-1 (2026-08-26): DORMANT. The legacy CBOE CSVs at
+//   https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/
+//   {equitypc,indexpc,totalpc}.csv were deprecated by CBOE in October 2019
+//   — they still respond HTTP 200 but `Last-Modified: 2020-10-30` and the
+//   data ends 2019-10-04. TrendScan was scraping these and presenting the
+//   resulting 6-year-stale P/C ratios as "current" in the EnvironmentPanel.
+//
+// Research (2026-08-26) found NO free, no-auth, JSON, historical-capable
+// replacement endpoint. The only current free source is the SSR'd CBOE
+// daily market-statistics page (Next.js RSC flight stream, undocumented,
+// format-fragile, latest-day only). Paid alternatives (Cboe Datashop
+// $2,499/mo) are out of scope.
+//
+// Decision: keep fetchCBOE_PC() defined here as documentation of the prior
+// ingestion contract, but do NOT call it. The EnvironmentPanel UI auto-hides
+// when snapshot.cboe_pc is null/empty. If a clean replacement source emerges
+// (CBOE publishes a stable JSON API, FRED revives the series, or a paid
+// feed is approved), re-wire the call at line ~2374 and un-hide the panel.
 const CBOE_SOURCES = {
   equity: 'https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv',
   index:  'https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/indexpc.csv',
@@ -1738,13 +1769,16 @@ function computeLeveredAppetite(tradfiOHLCV) {
   try {
     // Import the levered ETF metadata
     // (We can't dynamically import, so we hardcode the short tickers here)
+    // Audit F-14-f-3: UVIX is a 2x LONG VIX futures ETF (same hedge product family as UVXY).
+    // It rises when VIX spikes (market crashes). Moved from LONG_TICKERS to SHORT_TICKERS.
+    // SVIX and SVXY remain in LONG_TICKERS (they are short-vol / risk-on products).
     const SHORT_TICKERS = new Set(['SQQQ','QID','PSQ','SPXS','SPXU','SDS','SH','TZA','TWM','SDOW',
       'SMDD','RWM','MYY','DOG','SZK','BIS','TLL','SBB','SAGG','SBND','TMV','TBT','TYO','PST',
-      'UVXY']);  // UVXY is long volatility = hedge product
+      'UVXY','UVIX']);  // UVXY + UVIX = long volatility = hedge products
     const LONG_TICKERS = new Set(['TQQQ','QLD','UPRO','SPXL','SSO','TNA','UWM','UDOW',
       'SOXL','USD','TECL','ROM','FAS','LABU','NAIL','DPST','DRN','ERX','EDC','KOLD',
       'SCO','AGQ','ZSL','UGL','GLL','TMF','BOIL','UCO','CONL','BITX','BITU','ETHU',
-      'UVIX','SVIX','SVXY','SBIT','ETHD']);  // UVIX/SVIX/SVXY = short vol = risk-on
+      'SVIX','SVXY','SBIT','ETHD']);  // SVIX/SVXY = short vol = risk-on
 
     const longs = [];
     const shorts = [];
@@ -2129,6 +2163,17 @@ async function main() {
     cryptoUniverse = _prevSnapshot.crypto_universe;
   }
 
+  // Audit F-14-a-6 (2026-08-26): coingecko_top had no stale-data fallback.
+  // Every other major fetch (cmcTrending, globalMetrics, binanceOI, fred,
+  // etfFlows, factorWatch) has a fallback — coingecko_top was forgotten.
+  // A single 429 from CoinGecko wiped Board's price-change column for ~6h
+  // until the next GHA rebuild. Now falls back to previous snapshot's
+  // coingecko_top when the fresh fetch returns empty.
+  if ((!coingecko || Object.keys(coingecko).length === 0) && _prevSnapshot?.coingecko_top) {
+    console.log('  ⚠ coingecko_top empty — using previous snapshot (stale)');
+    coingecko = _prevSnapshot.coingecko_top;
+  }
+
   // ── Enrich crypto_universe with CMC tags + platform detail (Phase 2) ──────
   // Only runs if we have a CMC-sourced universe (skips CoinGecko-fallback universes
   // since CMC /info endpoint needs CMC IDs and would be wasteful on CoinGecko data).
@@ -2351,7 +2396,10 @@ async function main() {
   // ── Compute new analytical features from tradfi OHLCV + other data ──────
   // These use data we already have in memory (tradfiOHLCV, cryptoUniverse,
   // coingecko, regimeHistory, signalHistory) — no extra API calls needed.
-  const cboePC = await fetchCBOE_PC();
+  // Audit F-14-a-1: fetchCBOE_PC() is dormant (CSVs deprecated Oct 2019).
+  // See comment block at the function definition. Setting to null so the
+  // snapshot.cboe_pc key is absent and the EnvironmentPanel auto-hides.
+  const cboePC = null;
   const environment = computeEnvironment(tradfiOHLCV);
   const leveredAppetite = computeLeveredAppetite(tradfiOHLCV);
   const factorUniverse = computeFactorUniverse(tradfiOHLCV);

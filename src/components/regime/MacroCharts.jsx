@@ -75,8 +75,22 @@ export default function MacroCharts({ regime }) {
         const snap = snapRes.ok ? await snapRes.json() : null;
         const serverHistory = snap?.regime_history || [];
 
-        // Read localStorage for today's intraday entry
-        const localHistory = JSON.parse(localStorage.getItem('trendscan_regime_history') || '[]');
+        // Read localStorage for today's intraday entry.
+        // Audit F-14-d-16 (2026-08-26): previously a corrupted localStorage
+        // entry (truncated JSON, e.g. user closed tab mid-write) threw
+        // unhandled SyntaxError from JSON.parse, the catch swallowed it
+        // silently, and chartData stayed null forever — chart showed
+        // "collecting data" indefinitely even when the server snapshot
+        // had valid history. Now we isolate the localStorage parse in
+        // its own try/catch so a corrupted local entry never blocks
+        // the server-side authoritative history from rendering.
+        let localHistory = [];
+        try {
+          localHistory = JSON.parse(localStorage.getItem('trendscan_regime_history') || '[]');
+        } catch {
+          // Corrupted local entry — reset it so future writes start clean.
+          try { localStorage.removeItem('trendscan_regime_history'); } catch {}
+        }
 
         // Merge: server history (authoritative) + any newer local entry for today.
         // The server snapshot is the authoritative 90-day series, computed every

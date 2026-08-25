@@ -1,7 +1,13 @@
 // Inspired by react-hot-toast library
 import { useState, useEffect } from "react";
 
-const TOAST_LIMIT = 20;
+// Audit F-14-g-9 (2026-08-26): TOAST_LIMIT was 20 (upstream shadcn/ui
+// default is 1). High value means up to 20 toasts can stack — for a
+// dashboard-style app like TrendScan where errors/warnings can fire in
+// bursts (e.g. multiple sources fail in quick succession), 20 toasts is
+// excessive and would obscure the UI. Lowered to 5 — still allows a
+// small burst to all show, but caps visual noise.
+const TOAST_LIMIT = 5;
 const TOAST_REMOVE_DELAY = 1000000;
 
 const actionTypes = {
@@ -144,6 +150,11 @@ function toast({ ...props }) {
 function useToast() {
   const [state, setState] = useState(memoryState);
 
+  // Audit F-14-g-9 (2026-08-26): previously had `[state]` as deps,
+  // meaning the listener was re-subscribed on every state change —
+  // which is every dispatch (since dispatch updates memoryState, which
+  // triggers setState, which triggers this effect to re-subscribe).
+  // Changed to `[]` — subscribe once on mount, unsubscribe on unmount.
   useEffect(() => {
     listeners.push(setState);
     return () => {
@@ -152,7 +163,7 @@ function useToast() {
         listeners.splice(index, 1);
       }
     };
-  }, [state]);
+  }, []);
 
   return {
     ...state,

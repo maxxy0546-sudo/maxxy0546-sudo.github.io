@@ -92,8 +92,15 @@ function FredNotice({ fredAvailable, activeSignals }) {
           FRED macro data unavailable
         </div>
         <div className="text-[9px]" style={{ color: 'var(--scanner-text3)' }}>
-          Showing crypto-native signals only ({activeSignals}/44 inputs active).
-          Register for free at fred.stlouisfed.org for full regime coverage.
+          {/* Audit F-14-d-13 (2026-08-26): '/44 inputs' was a stale max
+              from an older signal schema. Actual max is 26 (18 crypto-native
+              + 8 FRED-derived). When FRED is unavailable, the engine shows
+              all 18 crypto-native inputs — the old '18/44' wording implied
+              26 inputs were missing when actually all available inputs are
+              active. Now phrased as 'all 18 crypto-native inputs active'. */}
+          Showing all 18 crypto-native inputs active (full regime coverage
+          needs 8 FRED-derived signals — register at fred.stlouisfed.org
+          to enable them via the daily GitHub Action).
         </div>
       </div>
     </div>
@@ -165,11 +172,21 @@ export default function MacroRegime() {
     return {
       quadrant: e.quadrant,
       liquidity: e.liquidity,
-      label: e.quadrant,  // RegimeCard uses `label` for the season config lookup
+      // Audit F-14-d-14 (2026-08-26): `label` is used by changeLog.js
+      // (NOT by RegimeCard — RegimeCard looks up SEASON_CONFIG via
+      // `quadrant` directly). Field is kept for changeLog compatibility
+      // but is just a duplicate of `quadrant`.
+      label: e.quadrant,
+      // Audit F-14-d-3 (2026-08-26): fallback grandComposite formula
+      // was 50 + (g + i + l) / 3 * 10 — for neutral nowcasts (all=50)
+      // that evaluated to 50 + 50 = 100 * 10 = 550, producing "550.0/100"
+      // in the UI while the bar capped at 100%. Now uses the same
+      // 0.33/0.33/0.34 weighted formula as computeGrandComposite() in
+      // regimeCalculations.js, so fallback matches server-side computation.
       grandComposite: e.grandComposite ?? (
-        // Fallback: compute from nowcasts if grandComposite wasn't stored
-        // (older snapshot entries may not have this field)
-        50 + (e.growthNowcast + e.inflationNowcast + e.liquidityNowcast) / 3 * 10
+        0.33 * (e.growthNowcast ?? 50) +
+        0.33 * (e.inflationNowcast ?? 50) +
+        0.34 * (e.liquidityNowcast ?? 50)
       ),
       growth: {
         nowcast: e.growthNowcast ?? 50,

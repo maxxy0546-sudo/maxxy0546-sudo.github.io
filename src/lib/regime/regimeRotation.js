@@ -79,14 +79,22 @@ export function detectRegimeRotation(history) {
     && heldSessions >= CONFIRM_SESSIONS
     && previousHeldSessions >= CONFIRM_SESSIONS;
 
-  // Flag stays "fresh" for FLIP_FRESH_SESSIONS after confirmation
+  // Flag stays "fresh" for FLIP_FRESH_SESSIONS after confirmation.
+  // Audit F-14-d-2 (2026-08-26): previously the walk-back was gated on
+  // `else if (flipped)` — meaning if today's quadrant matched yesterday's
+  // (no flip today), the walk-back never ran and flipFlag stayed false.
+  // Users who didn't visit on the confirmation day never saw the flip
+  // notification. Now the walk-back runs unconditionally (else branch),
+  // so a confirmed flip in the past FLIP_FRESH_SESSIONS days stays
+  // visible until it ages out — matching the docstring's promise of
+  // "flagged flips stay visible while fresh (≤10 sessions)".
   let flipFlag = false;
   let flipConfirmedAt = null;
 
   if (confirmed) {
     flipFlag = true;
     flipConfirmedAt = today.date;
-  } else if (flipped) {
+  } else {
     // Walk back to find if there was a recent confirmed flip in the past FLIP_FRESH_SESSIONS days
     for (let i = history.length - 1; i >= Math.max(0, history.length - FLIP_FRESH_SESSIONS); i--) {
       const h = history[i];

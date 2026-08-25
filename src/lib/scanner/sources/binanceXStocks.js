@@ -6,7 +6,9 @@
  */
 
 import { fetchWithTimeout } from '../fetchWithTimeout';
+import { markGloballyBlocked } from '../sourceHealth';
 
+const SOURCE_ID = 'binance_xstocks';
 const BASE = 'https://api.binance.com/api/v3';
 
 const TIMEFRAME_INTERVAL = {
@@ -42,7 +44,14 @@ export async function fetchCandles(symbol, timeframe = '1D', limit = 300) {
 
   try {
     const res = await fetchWithTimeout(url);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Audit F-14-e-8 (2026-08-26): mirror binanceSpot.js / binancePerps.js —
+      // HTTP 451 is a definitive geo-block signal. Without markGloballyBlocked,
+      // the resolver would burn 3 retries per symbol before deprioritizing,
+      // wasting ~10-15s on every xStocks scan in geo-blocked regions.
+      if (res.status === 451) markGloballyBlocked(SOURCE_ID);
+      return null;
+    }
     const arr = await res.json();
     if (!Array.isArray(arr) || arr.length === 0) return null;
 

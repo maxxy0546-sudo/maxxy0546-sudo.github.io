@@ -3,17 +3,23 @@
  *
  * Contains:
  *   - ADR window toggle (5/14/20 days, persisted to localStorage)
- *   - Settings gear (opens SettingsModal — client-side personal settings)
+ *
+ * Audit F-14-f-7 (2026-08-26): the Settings gear + SettingsModal were
+ * removed — SettingsModal saved user thresholds to localStorage but the
+ * scoring functions (tradfiScoring.js EXTENSION_CONFIG, cryptoScoring.js
+ * CRYPTO_EXTENSION_CONFIG) were hardcoded constants that never read those
+ * saved values, making the modal's "✓ SAVED" UX misleading. The scoring
+ * defaults are now honestly hardcoded; if user-tunable thresholds are
+ * re-introduced, wire getBoardSettings() into getExtensionLists /
+ * getCryptoExtensionLists at that time (see audit §7.6).
  *
  * Placed at the top of the Board tab bar.
  */
 
 import React, { useState, useEffect } from 'react';
-import SettingsModal from './SettingsModal';
 
 export default function BoardToolbar({ onAdrWindowChange = null }) {
   const [adrWindow, setAdrWindow] = useState(20);
-  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     const savedAdr = parseInt(localStorage.getItem('trendscan_adr_window')) || 20;
@@ -35,24 +41,7 @@ export default function BoardToolbar({ onAdrWindowChange = null }) {
           <button className={adrWindow === 14 ? 'active' : ''} onClick={() => changeAdrWindow(14)}>14D</button>
           <button className={adrWindow === 20 ? 'active' : ''} onClick={() => changeAdrWindow(20)}>20D</button>
         </div>
-
-        {/* Settings gear */}
-        <button
-          onClick={() => setShowSettings(true)}
-          className="text-[10px] font-bold px-2 py-1 rounded transition-all"
-          style={{
-            background: 'var(--scanner-bg2)',
-            border: '1px solid var(--scanner-border2)',
-            color: 'var(--scanner-text3)',
-            cursor: 'pointer',
-          }}
-          title="Settings"
-        >
-          ⚙
-        </button>
       </div>
-
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </>
   );
 }

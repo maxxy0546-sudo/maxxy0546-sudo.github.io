@@ -7,7 +7,7 @@
 # Why this exists:
 #   GitHub Actions cron is unreliable — scheduled runs can be delayed 30min
 #   to 6h+, or dropped entirely during peak load. The refresh-snapshot.yml
-#   workflow runs 6× daily (every 4h) via Cloudflare Worker cron, with
+#   workflow runs 4× daily (every 6h) via GHA cron at 04:00/10:00/16:00/22:00
 #   GitHub Actions cron as backup. Without this health check, a missed
 #   refresh could leave the site serving stale data for hours before
 #   anyone notices.
@@ -49,6 +49,12 @@ on:
     - cron: '0 */2 * * *'
   workflow_dispatch:
 
+# Audit F-14-a-10: prevent parallel runs (GitHub Actions cron can cluster-delayed
+# runs together). Older runs cancel since the freshest snapshot wins anyway.
+concurrency:
+  group: snapshot-health-check
+  cancel-in-progress: true
+
 permissions:
   issues: write
   actions: read
@@ -61,15 +67,23 @@ jobs:
       - name: Fetch live snapshot.json and check age
         id: check
         run: |
-          set -e
-          RESPONSE=$(curl -s -w "\n%{http_code}" https://trend-scan.github.io/snapshot.json)
+          # Audit F-14-a-3: drop `set -e` so a curl transport failure doesn't kill the
+          # script before $GITHUB_OUTPUT is written. Add explicit error handling +
+          # --max-time + --retry so transient runner-side issues surface as
+          # fetch_failed status rather than silent skip.
+          RESPONSE=$(curl -sS --max-time 30 --retry 2 -w "\n%{http_code}" https://trend-scan.github.io/snapshot.json 2>/dev/null) || {
+            echo "status=fetch_failed" >> $GITHUB_OUTPUT
+            echo "http_code=ERR" >> $GITHUB_OUTPUT
+            echo "WARNING: curl transport failure — could not reach trend-scan.github.io"
+            exit 0
+          }
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -n -1)
 
           if [ "$HTTP_CODE" != "200" ]; then
             echo "status=fetch_failed" >> $GITHUB_OUTPUT
             echo "http_code=$HTTP_CODE" >> $GITHUB_OUTPUT
-            echo "⚠️ Live snapshot.json returned HTTP $HTTP_CODE (expected 200)"
+            echo "WARNING: Live snapshot.json returned HTTP $HTTP_CODE (expected 200)"
             exit 0
           fi
 
@@ -81,13 +95,18 @@ jobs:
 
           if [ -z "$GENERATED_AT" ]; then
             echo "status=no_timestamp" >> $GITHUB_OUTPUT
-            echo "⚠️ snapshot.json missing generated_at field"
+            echo "WARNING: snapshot.json missing generated_at field"
             exit 0
           fi
 
+          # Audit F-14-a-4: pass GENERATED_AT via env var instead of string-interpolating
+          # into Python source. Prevents code injection if an attacker can influence
+          # snapshot.json's generated_at field (e.g. via a compromised gh-pages push).
+          export TRENDSCAN_GEN_AT="$GENERATED_AT"
           AGE_HOURS=$(python3 -c "
           from datetime import datetime, timezone
-          gen = datetime.fromisoformat('$GENERATED_AT'.replace('Z', '+00:00'))
+          import os
+          gen = datetime.fromisoformat(os.environ['TRENDSCAN_GEN_AT'].replace('Z', '+00:00'))
           now = datetime.now(timezone.utc)
           print(f'{(now - gen).total_seconds() / 3600:.2f}')
           ")
@@ -124,9 +143,10 @@ jobs:
             const label = isCritical ? 'stale-snapshot-critical' : 'stale-snapshot';
 
             // Ensure both labels exist
+            // Audit F-14-a-2: label descriptions now match the actual 6h/12h thresholds.
             for (const [name, color, desc] of [
-              ['stale-snapshot', 'f5c842', 'Snapshot is stale (8-24h old) — investigate refresh-snapshot failures'],
-              ['stale-snapshot-critical', 'ff4444', 'Snapshot is critically stale (>24h) or unreachable — data is outdated'],
+              ['stale-snapshot', 'f5c842', 'Snapshot is stale (6-12h old) — investigate refresh-snapshot failures'],
+              ['stale-snapshot-critical', 'ff4444', 'Snapshot is critically stale (>12h) or unreachable — data is outdated'],
             ]) {
               try {
                 await github.rest.issues.getLabel({

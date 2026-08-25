@@ -27,7 +27,7 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
 
       {/* Mid indicator — no toggle, it's the reference for fast > mid */}
       <IndicatorControl
-        label="Slow"
+        label="Mid"
         type={settings.midType}
         emaValue={settings.emaMid}
         vwapValue={settings.vwapMidDays}
@@ -36,9 +36,9 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
         onVwapChange={v => update('vwapMidDays', clamp(v, 1, 90))}
       />
 
-      {/* Base (slow) indicator — toggle gates price > slow */}
+      {/* Slow (trend) indicator — toggle gates price > slow */}
       <IndicatorControl
-        label="Base"
+        label="Slow"
         type={settings.slowType}
         emaValue={settings.emaSlow}
         vwapValue={settings.vwapDays}
@@ -47,7 +47,7 @@ export default function ScannerControls({ settings, onSettingsChange, isScanning
         onVwapChange={v => update('vwapDays', clamp(v, 1, 90))}
         toggleChecked={settings.priceAboveSlowEnabled}
         onToggleChange={v => update('priceAboveSlowEnabled', v)}
-        toggleTitle="Gate: Price > Base"
+        toggleTitle="Gate: Price > Slow"
       />
 
       <Separator />
@@ -400,9 +400,15 @@ function IndicatorControl({ label, type, emaValue, vwapValue, onTypeChange, onEm
           <button
             key={t}
             className="font-mono text-[9px] font-bold tracking-wide px-2 py-1.5 transition-colors"
+            /* Audit F-14-e-11 (2026-08-26): UI labels now match engine variable
+             * names (fast/mid/slow). CSS color vars (--scanner-fast/slow/base)
+             * are kept under their original names for stability — the mapping is:
+             *   label 'Fast' → --scanner-fast (yellow)
+             *   label 'Mid'  → --scanner-slow (magenta)
+             *   label 'Slow' → --scanner-base (cyan) */
             style={{
-              background: type === t ? label === 'Fast' ? 'rgba(255,255,0,0.15)' : label === 'Slow' ? 'rgba(255,45,255,0.12)' : 'rgba(0,229,255,0.12)' : 'transparent',
-              color: type === t ? label === 'Fast' ? 'var(--scanner-fast)' : label === 'Slow' ? 'var(--scanner-slow)' : 'var(--scanner-base)' : 'var(--scanner-text3)',
+              background: type === t ? label === 'Fast' ? 'rgba(255,255,0,0.15)' : label === 'Mid' ? 'rgba(255,45,255,0.12)' : 'rgba(0,229,255,0.12)' : 'transparent',
+              color: type === t ? label === 'Fast' ? 'var(--scanner-fast)' : label === 'Mid' ? 'var(--scanner-slow)' : 'var(--scanner-base)' : 'var(--scanner-text3)',
               border: 'none',
               cursor: 'pointer',
               borderRight: t === 'ema' ? '1px solid var(--scanner-border2)' : 'none'
@@ -417,9 +423,9 @@ function IndicatorControl({ label, type, emaValue, vwapValue, onTypeChange, onEm
       {/* Period input with spinner */}
       <div style={{ borderLeft: '1px solid var(--scanner-border2)' }} className="flex items-center">
         {type === 'vwap' ? (
-          <SpinnerInput value={vwapValue} onChange={onVwapChange} min={0} max={90} width={40} suffix="d" color={label === 'Fast' ? 'var(--scanner-fast)' : label === 'Slow' ? 'var(--scanner-slow)' : 'var(--scanner-base)'} />
+          <SpinnerInput value={vwapValue} onChange={onVwapChange} min={0} max={90} width={40} suffix="d" color={label === 'Fast' ? 'var(--scanner-fast)' : label === 'Mid' ? 'var(--scanner-slow)' : 'var(--scanner-base)'} />
         ) : (
-          <SpinnerInput value={emaValue} onChange={onEmaChange} min={0} max={500} width={48} color={label === 'Fast' ? 'var(--scanner-fast)' : label === 'Slow' ? 'var(--scanner-slow)' : 'var(--scanner-base)'} />
+          <SpinnerInput value={emaValue} onChange={onEmaChange} min={0} max={500} width={48} color={label === 'Fast' ? 'var(--scanner-fast)' : label === 'Mid' ? 'var(--scanner-slow)' : 'var(--scanner-base)'} />
         )}
       </div>
     </div>

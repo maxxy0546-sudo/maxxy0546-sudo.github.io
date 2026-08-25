@@ -29,8 +29,12 @@ export function computeGrowthSignals(data) {
   const signals = [];
 
   // G1: BTC 90d Momentum
+  // adaptiveZ already encodes direction: positive when today > mean, negative when below.
+  // The prior `btcROC90 > 0 ? btcPrice : btcPrice.map(v => -v)` form inverted the sign
+  // during a crash (making G1 positive when BTC was falling), biasing the growth composite
+  // toward OVERHEAT/GOLDILOCKS during drawdowns. Audit F-14-d-1.
   const btcROC90 = pctROC(btcPrice, 90);
-  signals.push({ name: 'BTC 90D ROC', value: adaptiveZ(btcROC90 > 0 ? btcPrice : btcPrice.map(v => -v), 52, 180), weight: 1.75, raw: btcROC90 });
+  signals.push({ name: 'BTC 90D ROC', value: adaptiveZ(btcPrice, 52, 180), weight: 1.75, raw: btcROC90 });
 
   // G2: Altcoin Market Cap Trend (ETH price as proxy)
   const ethTrend = ethPrice.length > 30 ? pctROC(ethPrice, 30) : 0;

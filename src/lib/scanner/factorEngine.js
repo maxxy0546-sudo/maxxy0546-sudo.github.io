@@ -55,12 +55,16 @@ export function computeFactorScores(universe) {
 
     // 1. Momentum 12-1mo: P(t-21d) / P(t-252d) - 1
     // Clamp to [-0.95, 5.0] to prevent extreme outliers from skewing quintiles
-    if (closes.length >= 252) {
+    // NOTE: requires closes.length >= 253 to safely index closes[length-253] (audit F-14-e-1).
+    if (closes.length >= 253) {
       const p21 = closes[closes.length - 22];
       const p252 = closes[closes.length - 253];
       scores.momentum = Math.max(-0.95, Math.min(5.0, (p21 / p252) - 1));
     } else if (closes.length >= 30) {
-      scores.momentum = Math.max(-0.95, Math.min(5.0, (closes[closes.length - 1] / closes[0]) - 1));
+      // Fallback for short histories: skip last 21 days to preserve the short-term-reversal
+      // skip that defines 12-1mo momentum (audit F-14-b-7).
+      const skipIdx = Math.max(0, closes.length - 22);
+      scores.momentum = Math.max(-0.95, Math.min(5.0, (closes[skipIdx] / closes[0]) - 1));
     }
 
     // 2. Size: -log(market cap) — small cap = high score
@@ -239,8 +243,16 @@ export function computeSpreadMonitor(portfoliosByFactor, candlesBySymbol, benchm
         ret: hasYtdData ? (longSeries[longSeries.length - 1] / longSeries[ytdStartIdx]) - 1 : null,
       };
       factorData.spread_ytd = {
+        // Audit F-14-e-3 (2026-08-26): spreadSeries = longNorm − shortNorm
+        // (each normalized to 1.0 at series start), so its values are
+        // dimensionless differences of two ratios — NOT a return series.
+        // The prior formula (spread_now / spread_ytd_start) − 1 divided two
+        // such differences, producing +400% blowups when spread moved from
+        // 0.01 to 0.05 and sign-flips when near zero. YTD is now the absolute
+        // change in the spread itself, which is the cleanest definition for
+        // a non-return series (no division, no blowup).
         ret: hasYtdData && spreadSeries[ytdStartIdx] != null
-          ? (spreadSeries[spreadSeries.length - 1] / spreadSeries[ytdStartIdx]) - 1
+          ? spreadSeries[spreadSeries.length - 1] - spreadSeries[ytdStartIdx]
           : null,
       };
     }
@@ -251,23 +263,8 @@ export function computeSpreadMonitor(portfoliosByFactor, candlesBySymbol, benchm
   return result;
 }
 
-// Diagnostic: check if multiple factors produce identical Q5/Q1 assignments
-function detectIdenticalQuintiles(portfoliosByFactor) {
-  const factors = Object.keys(portfoliosByFactor);
-  const q5ByKey = {};
-  for (const f of factors) {
-    const key = JSON.stringify([...portfoliosByFactor[f].longOnly].sort());
-    if (!q5ByKey[key]) q5ByKey[key] = [];
-    q5ByKey[key].push(f);
-  }
-  const duplicates = Object.values(q5ByKey).filter(g => g.length > 1);
-  if (duplicates.length > 0) {
-    console.warn('[factorEngine] WARNING: Identical Q5 quintiles detected across factors:',
-      duplicates.map(g => g.join(' + ')).join(', '),
-      '\nThis means the factor scores are producing the same ranking — check if candle data differs between assets.');
-  }
-  return duplicates;
-}
+// Audit F-14-e-10 (2026-08-26): detectIdenticalQuintiles removed — zero callers
+// (was a diagnostic stub that just console.warn'd, no real effect on output).
 
 function formatFactorLabel(factor) {
   const map = {

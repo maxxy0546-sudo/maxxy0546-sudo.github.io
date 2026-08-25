@@ -180,60 +180,6 @@ export async function fetchCandles(symbol, timeframe = '1D', limit = 300) {
 }
 
 /**
- * Fetch the latest quote/snapshot for a ticker (single API call).
- * Useful for getting current price + 24h change without fetching full candles.
- */
-export async function fetchSnapshot(symbol) {
-  const apiKey = getApiKey();
-  if (!apiKey) return null;
-  const ticker = toPolygonTicker(symbol);
-  try {
-    const url = `${BASE_URL}/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(ticker)}?apiKey=${apiKey}`;
-    const res = await fetchWithTimeout(url);
-    if (!res.ok) return null;
-    const d = await res.json();
-    return d.ticker ? {
-      price: d.ticker.lastTrade?.p || d.ticker.day?.c,
-      dayHigh: d.ticker.day?.h,
-      dayLow: d.ticker.day?.l,
-      dayOpen: d.ticker.day?.o,
-      volume24h: d.ticker.day?.v,
-      change24hPct: d.ticker.todaysChangePerc,
-    } : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Fetch previous day's OHLC (works on free tier — useful for daily chart fallback).
- */
-export async function fetchPrevClose(symbol) {
-  const apiKey = getApiKey();
-  if (!apiKey) return null;
-  const ticker = toPolygonTicker(symbol);
-  try {
-    const url = `${BASE_URL}/v2/aggs/ticker/${encodeURIComponent(ticker)}/prev?adjusted=false&apiKey=${apiKey}`;
-    const res = await fetchWithTimeout(url);
-    if (!res.ok) return null;
-    const d = await res.json();
-    if (d.status !== 'OK' || !d.results?.length) return null;
-    const c = d.results[0];
-    return {
-      ts: c.t,
-      open: c.o,
-      high: c.h,
-      low: c.l,
-      close: c.c,
-      vol: c.v,
-      vwap: c.vw,
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Check if the Massive API key is configured (for UI display).
  */
 export function isConfigured() {

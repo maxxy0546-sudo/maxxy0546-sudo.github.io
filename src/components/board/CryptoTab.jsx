@@ -105,7 +105,11 @@ export default function CryptoTab({ cryptoAssets }) {
     { key: 'symbol', label: 'Ticker' },
     { key: null, label: 'Name' },
     { key: 'price', label: 'Price' },
-    { key: null, label: '20D' },
+    // Audit F-14-f-9 (2026-08-26): sparkline column was previously labeled
+    // '20D' — same as the ret20d column at line 111 — making both headers
+    // visually identical and confusing. Renamed to 'Trend' to distinguish
+    // (sparkline visual vs. sortable % return column).
+    { key: null, label: 'Trend' },
     { key: 'ret1d', label: '1D' },
     { key: 'ret5d', label: '5D' },
     { key: 'ret20d', label: '20D' },

@@ -81,7 +81,10 @@ function loadData() {
 }
 
 function sliceAsOf(candles, asOfTs) {
-  return candles.filter(c => c.ts < asOfTs);
+  // Include bar at asOfTs so the signal computed for day i uses closes[0..i] (inclusive).
+  // Matches walk_forward_backtest.js:236 `candles.slice(0, i+1)` and the live system
+  // (compute_signal_metrics.js passes the full array). Audit F-14-c-2.
+  return candles.filter(c => c.ts <= asOfTs);
 }
 
 function sliceFundingAsOf(funding, asOfTs) {

@@ -45,7 +45,6 @@ function ConstituentTable({ items }) {
             {['Ticker', 'Name', 'Subtheme', 'Price', '1D', '5D', '20D', 'RS 20D', 'vs50MA', 'ATR Ext', 'NH20', 'NH52', 'Tier'].map(h => (
               <th key={h} className="text-[8px] font-semibold tracking-[0.1em] uppercase py-2 px-3 text-left" style={{ color: 'var(--scanner-text3)' }}>{h}</th>
             ))}
-        <div className="ml-auto"><CopyCsvButtons tableId="themes-table" /></div>
           </tr>
         </thead>
         <tbody>
@@ -92,7 +91,6 @@ function ConstituentTable({ items }) {
               </td>
             </tr>
           ))}
-        <div className="ml-auto"><CopyCsvButtons tableId="themes-table" /></div>
         </tbody>
       </table>
     </div>
@@ -135,7 +133,6 @@ export default function ThemesTab({ themes, constituents }) {
               {['#', 'Theme', 'Score', 'Status', 'N', 'RS 20D', '% >20', '% >50', '% NH20', 'NH52W', '20D Ret', 'Δ'].map(h => (
                 <th key={h} className="text-[8.5px] font-semibold tracking-[0.1em] uppercase py-2.5 px-3 text-left" style={{ color: 'var(--scanner-text3)' }}>{h}</th>
               ))}
-        <div className="ml-auto"><CopyCsvButtons tableId="themes-table" /></div>
             </tr>
           </thead>
           <tbody>

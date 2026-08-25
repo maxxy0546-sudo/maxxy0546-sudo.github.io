@@ -18,7 +18,13 @@
  *   3. trendTenure — consecutive days closing above 50-MA
  *   4. atrExt50ma — extension from 50-MA in ATR units (volatility-normalized)
  *   5. RS vs BTC — 7-day return ratio (for majors)
- *   6. fundingZ — funding rate z-score (crowding/reversal risk)
+ *   6. fundingZ — funding rate z-score (crowding/reversal risk).
+ *      Audit F-14-c-8 (2026-08-26): fundingZ is NOT effectively dead in
+ *      v3.1 — the historical .t vs .ts bug (fixed at line 326-334) had
+ *      masked its effect in cached-funding backtests. Walk-forward
+ *      ablation shows ablating fundingZ changes OOS STRONG count
+ *      343→348 (+1.5%) and preHit 0.5452→0.5374 (-0.8pp). Small but
+ *      non-zero effect — keep the gate, don't ablate it.
  *   7. RSI (penalty only) — overbought penalty (>80 reduces STRONG)
  *   8. impulseZ (penalty only) — decelerating penalty (falling momentum)
  *   9. macroZ (boost) — external signal, boosts conf 7→8 when macroZ > 1.5
@@ -232,6 +238,18 @@ export function computeMacroZ(candles, params = {}) {
   } = params;
   if (!candles || candles.length < slowLen + volLen) {
     return { macroZ: 0, bullSignal: false, bearSignal: false };
+  }
+  // Audit F-14-c-7 (2026-08-26): input validation. If any close is ≤ 0,
+  // Math.log returns -Infinity (for 0) or NaN (for negatives). The EMA
+  // propagates NaN through the rest of the series, round(NaN, 3) returns
+  // null, and `null > 2.5` evaluates to false — silently disabling the
+  // macroZ boost without any warning. This bites when synthetic test data
+  // or data feeds with a 0 sentinel (e.g. a delisted symbol's stale last
+  // close) reaches the engine. Bail out early with the neutral return.
+  for (const c of candles) {
+    if (!c || typeof c.close !== 'number' || !isFinite(c.close) || c.close <= 0) {
+      return { macroZ: 0, bullSignal: false, bearSignal: false };
+    }
   }
   const logCloses = candles.map(c => Math.log(c.close));
   const logEmaFast = ema(logCloses, fastLen);
@@ -512,9 +530,17 @@ export function computeAssetStance({
 
 // ─── Verdict mapper ──────────────────────────────────────────────────────────
 
+// Audit F-14-c-1 (2026-08-26): the prior comment claimed "Walk-forward
+// validated: 54.5% OOS hit, +5.70% avg (343 signals)" — those figures are
+// from walk_forward_results.json at STRONG=9 (the walk-forward optimum),
+// NOT at STRONG=8 (production). At STRONG=8 the TRAIN STRONG pre-hit is
+// 41.6% (below coin flip); OOS performance at STRONG=8/WEAK=8 is not
+// reported in walk_forward_results.json. These thresholds are kept
+// conservative vs the walk-forward optimum (STRONG=9, WEAK=6) for
+// stability reasons not captured in code — re-evaluate before changing.
 export const DEFAULT_THRESHOLDS = {
-  STRONG: 8,  // Walk-forward validated: 54.5% OOS hit, +5.70% avg (343 signals)
-  WEAK: 8,    // OOS 41.6% hit — directional but below coin flip (expected for crypto)
+  STRONG: 8,
+  WEAK: 8,
 };
 
 export function mapStanceToVerdict(stance, confidence, thresholds = DEFAULT_THRESHOLDS) {

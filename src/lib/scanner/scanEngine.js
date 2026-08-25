@@ -515,9 +515,13 @@ async function analyzeAsset(asset, settings, cgMarketData, oiData) {
   const cpd = CANDLES_PER_DAY[timeframe] || 6;
   const sparklineCandles = 7 * cpd;
 
+  // Audit F-14-e-13 (2026-08-26): fallback defaults must match Scanner.jsx
+  // INITIAL_SETTINGS (emaFast: 21, emaMid: 100, emaSlow: 200). Previously
+  // emaMid fell back to 50, mismatching the 100 default — unreachable in
+  // practice but misleading for future maintainers reading the code path.
   const required = Math.max(
     fastType === 'vwap' ? (vwapFastDays || 3) * cpd : (emaFast || 21),
-    midType  === 'vwap' ? (vwapMidDays  || 14) * cpd : (emaMid  || 50),
+    midType  === 'vwap' ? (vwapMidDays  || 14) * cpd : (emaMid  || 100),
     slowType === 'vwap' ? (vwapDays     || 30) * cpd : (emaSlow || 200),
     sparklineCandles
   );
@@ -743,13 +747,19 @@ export async function runScan(settings, onProgress) {
   const failedAssets = [];
   const tasks = assets.map(asset => () => analyzeAsset(asset, settings, cgMarketData, oiData));
 
-  await runWithPool(tasks, settings.concurrency || 5, (done, match) => {
-    scannedCount = done;
+  // Audit F-14-e-5 (2026-08-26): previously `scannedCount = done` where `done`
+  // was the just-completed task index (i+1) — not a count. Under concurrency
+  // (10 workers), `done` jumps non-monotonically (3 → 7 → 4 → 11 → 5), causing
+  // the progress bar to move backwards. Now using a separate `++scannedCount`
+  // counter that only increments.
+  await runWithPool(tasks, settings.concurrency || 5, (_done, match) => {
+    ++scannedCount;
     if (match) {
       results.push(match);
       matchedCount++;
     } else {
-      failedAssets.push(assets[done - 1]);
+      // _done is 1-indexed; assets[_done - 1] is the asset that just failed.
+      failedAssets.push(assets[_done - 1]);
     }
     onProgress({
       phase: 'scanning',

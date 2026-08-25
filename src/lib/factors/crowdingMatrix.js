@@ -24,19 +24,24 @@ import { mean, stddev } from '../regime/regimeCalculations.js';
  * @returns {number} correlation (-1 to 1), or 0 if insufficient data
  */
 function pearsonCorrelation(x, y) {
+  // Audit F-14-f-5: align to the TRAILING n elements (most recent) when series have
+  // unequal lengths. Previously `slice(0, n)` took the FRONT n elements of the longer
+  // series, producing misaligned (front-of-A vs all-of-B) correlation values.
   const n = Math.min(x.length, y.length);
   if (n < 10) return 0;  // need at least 10 overlapping data points
 
-  const mx = mean(x.slice(0, n));
-  const my = mean(y.slice(0, n));
-  const sx = stddev(x.slice(0, n));
-  const sy = stddev(y.slice(0, n));
+  const xs = x.slice(-n);
+  const ys = y.slice(-n);
+  const mx = mean(xs);
+  const my = mean(ys);
+  const sx = stddev(xs);
+  const sy = stddev(ys);
 
   if (sx === 0 || sy === 0) return 0;
 
   let sum = 0;
   for (let i = 0; i < n; i++) {
-    sum += ((x[i] - mx) / sx) * ((y[i] - my) / sy);
+    sum += ((xs[i] - mx) / sx) * ((ys[i] - my) / sy);
   }
 
   return sum / n;

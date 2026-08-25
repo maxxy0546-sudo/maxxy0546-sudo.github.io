@@ -63,7 +63,25 @@
         frame-src                                — TradingView chart iframe (s.tradingview.com)
         connect-src                              — runtime fetch() / XHR endpoints (all exchange + macro + treasury APIs)
         worker-src                               — Web Workers (none currently, but allowed from self for future use)
-        frame-ancestors 'none'                   — clickjacking mitigation (NOTE: ignored via meta tag on GitHub Pages; would need HTTP header to be effective)
+        frame-ancestors 'none'                   — clickjacking mitigation
+        Audit F-14-g-7 (2026-08-26): frame-ancestors is IGNORED when
+        delivered via <meta> tag — it must be an HTTP response header
+        to be effective (per CSP spec, section 8.3). GitHub Pages does
+        not allow setting custom HTTP response headers, so we cannot
+        enforce frame-ancestors at the CSP layer. The line is kept in
+        the meta tag for: (a) documentation of intent, (b) readers
+        auditing the CSP who want to know we tried, (c) future
+        migration to a host that supports HTTP headers (e.g. a Cloudflare
+        Pages deployment) where it would become effective immediately.
+        Alternatives considered and rejected:
+          - JS-based frame-busting (if (top !== self) top.location = self.location):
+            widely broken in modern browsers (X-Frame-Options: SAMEORIGIN
+            on the framing page defeats it, sandbox iframes break it, and
+            some browsers ignore frame-busting for security reasons).
+          - X-Frame-Options HTTP header: same GitHub Pages limitation.
+        Net: this is the best available mitigation given the GitHub Pages
+        constraint. Sensitive actions (form submissions, etc.) all use
+        POST with CSRF tokens rather than relying on framing protection.
         base-uri 'self'                          — prevent <base> tag injection
         form-action 'self'                       — prevent form submissions to external origins
         object-src 'none'                        — no Flash/Java/plugins
@@ -85,7 +103,6 @@
         https://www.okx.com
         https://mainnet.zklighter.elliot.ai
         https://api.polygon.io
-        https://api.massive.com
         https://api.twelvedata.com
         https://api.kraken.com
         https://api.alternative.me

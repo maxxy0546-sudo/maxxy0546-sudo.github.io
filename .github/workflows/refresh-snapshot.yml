@@ -22,7 +22,7 @@
 #     weekend, and crypto markets never close. This ensures the snapshot
 #     is always fresh for Monday morning users.
 
-name: Refresh FRED Snapshot
+name: Refresh TrendScan Snapshot
 
 on:
   schedule:

@@ -150,6 +150,58 @@ Then load the Board page and check the Network tab — requests to your Worker s
 
 ---
 
+## Rate limiting & fail-open behavior
+
+### Rate limiting (audit F-14-b-16, 2026-08-26)
+
+The Worker enforces a per-IP rate limit of 60 requests/minute. Bursting
+above this returns HTTP 429 with `Retry-After` header. The rate limiter
+uses Cloudflare's Cache API for cross-isolate state (Workers can run on
+multiple isolates worldwide); note that this is best-effort — concurrent
+requests within the same ~50ms window can both pass the check before
+either increments the counter (F-14-b-10). For atomic rate limiting, you'd
+need Durable Objects (paid Workers plan). For the current use case
+(daily-refresh-driven fetches + occasional user visits), 60/min is
+generous enough that the race window doesn't matter.
+
+The Client (yahooCrypto.js, traditionalMarkets.js) doesn't currently
+honor `Retry-After`. If you see frequent 429s in production, the right
+fix is to space out client-side fetches (e.g. with p-limit) rather than
+increasing the Worker limit — the limit exists to protect your daily
+free-tier quota.
+
+### Fail-open behavior
+
+If the Worker returns 5xx (Worker code crash, V8 isolate OOM), HTTP 429
+(rate limit), or network-level errors (DNS, TCP timeout), the client-side
+fetch promise rejects. The calling code in `yahooCrypto.js` and
+`traditionalMarkets.js` catches this and returns `null` candles. The
+caller (Scanner, Board, Macro pages) handles `null` candles by:
+
+1. Falling back to other sources (Binance, Kraken, CoinGecko) via
+   `sourceResolver.js` — Yahoo is one of many crypto sources.
+2. Showing "—" in the affected table cells.
+3. NOT crashing or showing error UI.
+
+So a Worker outage doesn't take the app down — it just degrades tradfi
+coverage. The board's crypto data (Binance/Kraken/Hyperliquid) keeps
+working. This is by design: a single point of failure on the Worker side
+shouldn't be a single point of failure for the whole app.
+
+If you suspect the Worker is down:
+
+1. Hit `https://your-worker.workers.dev/health` — should return
+   `{"status":"ok","service":"trendscan-yahoo-proxy","tokenRequired":true}`.
+2. Check Cloudflare dashboard → Workers → your-worker → Real-time Logs.
+3. Check Cloudflare dashboard → Workers → your-worker → Metrics tab for
+   5xx / 429 spikes.
+
+The Worker has no alerting built in. If you want notifications on
+Worker downtime, set up a Cloudflare Worker Health Check (separate
+feature) or a UptimeRobot ping against `/health`.
+
+---
+
 ## How to rotate the token
 
 If you suspect the token has been compromised (or just want to rotate periodically):
