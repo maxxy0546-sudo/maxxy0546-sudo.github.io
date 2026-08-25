@@ -7,7 +7,7 @@
 # Why this exists:
 #   GitHub Actions cron is unreliable — scheduled runs can be delayed 30min
 #   to 6h+, or dropped entirely during peak load. The refresh-snapshot.yml
-#   workflow runs 6× daily (every 4h) via Cloudflare Worker cron, with
+#   workflow runs 4× daily (every 6h) via GHA cron at 04:00/10:00/16:00/22:00
 #   GitHub Actions cron as backup. Without this health check, a missed
 #   refresh could leave the site serving stale data for hours before
 #   anyone notices.

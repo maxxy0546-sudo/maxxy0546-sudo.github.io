@@ -177,7 +177,9 @@ export default {
         limit: RATE_LIMIT_PER_MINUTE,
         window: '60s',
         retryAfter: 60,
-        ip: rateLimit.ip,
+        // Audit F-14-b-13 (2026-08-26): dropped `ip: rateLimit.ip` from the
+        // response body — operational info useful for reconnaissance but not
+        // needed by legitimate clients (they get Retry-After header instead).
       }), {
         status: 429,
         headers: {

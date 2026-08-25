@@ -481,7 +481,7 @@ export default function Board() {
         {blockedSources.length > 0 && (
           <span
             className="text-[9px] tracking-wider px-2 py-0.5"
-            title={`Sources geo-blocked in this region (HTTP 451). Enable VPN to restore coverage. Auto-retry in ${blockedSources[0]?.secondsLeft ?? 0}s.`}
+            title={`Sources geo-blocked in this region (HTTP 451). Enable VPN to restore coverage. Auto-retry in ${Math.max(0, ...blockedSources.map(s => s.secondsLeft ?? 0))}s.`}
             style={{
               color: 'var(--scanner-text3)',
               background: 'rgba(255,165,0,0.08)',
@@ -490,7 +490,7 @@ export default function Board() {
             }}
           >
             ⚠ Geo-blocked: {blockedSources.map(s => s.sourceId).join(', ')}
-            <span className="ml-1 opacity-60">({blockedSources[0]?.secondsLeft ?? 0}s retry)</span>
+            <span className="ml-1 opacity-60">({Math.max(0, ...blockedSources.map(s => s.secondsLeft ?? 0))}s retry)</span>
           </span>
         )}
       </div>

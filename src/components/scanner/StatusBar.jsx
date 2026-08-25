@@ -4,11 +4,21 @@ function indicatorLabel(type, emaVal, vwapVal) {
   return type === 'vwap' ? `VWAP(${vwapVal}d)` : `EMA(${emaVal})`;
 }
 
+// Audit F-14-e-12 (2026-08-26): expanded to match ScannerHeader.jsx's full
+// map. Previously only had 4 entries; for okx_perps (the default!),
+// hyperliquid, bybit, coingecko, auto, snapshot — fell through to raw
+// uppercase IDs, inconsistent with ScannerHeader's friendly names.
 const EXCHANGE_NAMES = {
+  okx_perps: 'OKX Perps',
   okx: 'OKX Spot',
   kraken: 'Kraken',
   binance: 'Binance Spot',
   binance_perps: 'Binance Perps',
+  hyperliquid: 'Hyperliquid',
+  bybit: 'Bybit',
+  coingecko: 'CoinGecko',
+  auto: 'Auto (Binance→OKX→Snapshot)',
+  snapshot: 'Snapshot (Daily)',
 };
 
 export default function StatusBar({ settings }) {
@@ -34,11 +44,15 @@ export default function StatusBar({ settings }) {
         {settings.sectorFilter && settings.sectorFilter !== 'All' && (
           <span style={{ color: 'var(--scanner-accent)' }}>Sector: {settings.sectorFilter}</span>
         )}
-        {settings.maxSupplyFilter > 0 && (
-          <span style={{ color: 'var(--scanner-accent)' }}>Max Supply &gt;= {settings.maxSupplyFilter.toLocaleString()}</span>
-        )}
       </div>
-      <span style={{ color: 'var(--scanner-text3)' }}>Trend Strength Screener v1.5</span>
+      <div className="flex gap-5">
+        <span className="hidden md:inline">rVol {settings.rVolPeriod || 20}</span>
+        <span className="hidden md:inline">ATR {settings.atrPeriod || 14}</span>
+        <span>Scanned {settings.scannedCount ?? 0}/{settings.totalCount ?? 0}</span>
+        <span style={{ color: settings.matchedCount > 0 ? 'var(--scanner-accent)' : 'var(--scanner-text3)' }}>
+          Matched {settings.matchedCount ?? 0}
+        </span>
+      </div>
     </div>
   );
 }

@@ -11,6 +11,10 @@
  * Schedule:
  *   Every 4 hours, 24/7 (6 fires per day). Cron expression:
  *     0 0/4 * * *    (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+ *     (Audit F-14-b-15: written as `0 0/4` rather than the equivalent
+ *     `0 * /4` form (the space is intentional) to avoid the JSDoc star-slash
+ *     comment-terminator sequence. Both cron forms are accepted by Cloudflare;
+ *     see REFRESH_TRIGGER_SETUP.md.)
  *   Cloudflare cron uses standard 5-field Unix cron syntax.
  *   More frequent than the GitHub Actions cron (0 4,10,16,22 * * *) it backs
  *   up — keeps the snapshot from ever going more than 4h stale.
@@ -30,7 +34,7 @@
  *        GH_TOKEN = <your GitHub PAT>
  *   5. Click "Deploy"
  *   6. Go to the Triggers tab → Cron Triggers → Add cron trigger:
- *        Cron expression: 0 0/4 * * *
+ *        Cron expression: 0 0/4 * * *  (see note above re: form)
  *   7. (Optional) Set NOTIFY_WEBHOOK for failure alerts
  *
  * Why this is needed:
