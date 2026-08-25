@@ -108,7 +108,7 @@ export default function ScannerHeader({ settings, scanMeta, onModeChange }) {
               <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'var(--scanner-text3)' }} />
               <span>Fast {fastLabel}</span>
               <span style={{ color: 'var(--scanner-text3)' }}>above</span>
-              <CondBadge color="var(--scanner-slow)">Slow {midLabel}</CondBadge>
+              <CondBadge color="var(--scanner-slow)">Mid {midLabel}</CondBadge>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: 'var(--scanner-text3)' }} />

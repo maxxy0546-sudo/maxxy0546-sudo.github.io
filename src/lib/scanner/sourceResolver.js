@@ -160,19 +160,20 @@ export async function fetchCandles(symbol, opts = {}) {
   //   1. Skip globally blocked sources (HTTP 451 — geo-blocked in this region)
   //   2. Skip per-symbol deprioritized sources (3+ failures for this symbol)
   //   3. Skip sources whose supports() check returns false (universe filter)
-  const candidates = [];
-  for (const src of sourceList) {
-    if (isGloballyBlocked(src.id)) continue;
-    if (isDeprioritized(src.id, symbol)) continue;
-    // supports() check: skip sources that know they don't have this symbol.
-    // This is a cached universe lookup (instant after first load) — not an
-    // HTTP request. Saves a wasted fetch round-trip for unsupported symbols.
-    if (src.supports) {
-      const ok = await src.supports(symbol);
-      if (!ok) continue;
-    }
-    candidates.push(src);
-  }
+  //
+  // Audit F-14-e-14 (2026-08-26): previously the supports() checks ran
+  // sequentially with `await` inside the for-loop, adding 3-8s of cold-cache
+  // delay on the first scan of a session. Now we filter the sync blockers
+  // (geo-blocked + deprioritized) first, then race the supports() checks in
+  // parallel via Promise.all — they're independent queries (each is a cached
+  // universe lookup, no shared state).
+  const prefiltered = sourceList.filter(src =>
+    !isGloballyBlocked(src.id) && !isDeprioritized(src.id, symbol)
+  );
+  const supportsResults = await Promise.all(
+    prefiltered.map(src => src.supports ? src.supports(symbol) : Promise.resolve(true))
+  );
+  const candidates = prefiltered.filter((_, i) => supportsResults[i] !== false);
 
   // Sort: preferred source first (if specified), then by tier
   if (preferredSource) {

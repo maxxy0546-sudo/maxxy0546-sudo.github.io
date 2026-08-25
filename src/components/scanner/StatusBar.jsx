@@ -36,7 +36,7 @@ export default function StatusBar({ settings }) {
         <span>{EXCHANGE_NAMES[settings.exchange] || settings.exchange.toUpperCase()}</span>
         <span>Top 500 · {settings.timeframe || '4H'}</span>
         <span className="hidden sm:inline">
-          Price &gt; {slowLabel} · Fast {fastLabel} &gt; Slow {midLabel}
+          Price &gt; {slowLabel} · Fast {fastLabel} &gt; Mid {midLabel}
         </span>
         {settings.chainFilter && settings.chainFilter !== 'All' && (
           <span style={{ color: 'var(--scanner-accent)' }}>Chain: {settings.chainFilter}</span>

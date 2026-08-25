@@ -178,8 +178,11 @@ export default function ResultsTable({ results, settings, isScanning, onSelectRo
     return arr;
   }, [results, sortKey, sortDir]);
 
-  const maxPricePct = Math.max(...sorted.map(r => r.pricePct), 1);
-  const maxEmaPct = Math.max(...sorted.map(r => r.emaPct), 1);
+  // Audit F-14-e-15 (2026-08-26): maxPricePct / maxEmaPct previously computed
+  // on every render (O(N) spread into Math.max). Now memoized via useMemo
+  // so they only recompute when `sorted` (results array) changes.
+  const maxPricePct = useMemo(() => Math.max(...sorted.map(r => r.pricePct), 1), [sorted]);
+  const maxEmaPct = useMemo(() => Math.max(...sorted.map(r => r.emaPct), 1), [sorted]);
 
   const fastLabel = indicatorLabel(settings.fastType, settings.emaFast, settings.vwapFastDays);
   const midLabel = indicatorLabel(settings.midType, settings.emaMid, settings.vwapMidDays);
