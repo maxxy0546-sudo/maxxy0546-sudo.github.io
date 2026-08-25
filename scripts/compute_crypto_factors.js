@@ -24,6 +24,14 @@
 import { computeFactorScores, buildQuintilePortfolios, computeSpreadMonitor, detectFactorRotation, buildQuilt } from '../src/lib/scanner/factorEngine.js';
 import { detectRotation, appendToHistory } from '../src/lib/factors/rotationDetector.js';
 import { buildCrowdingMatrix, extractSpreadSeries } from '../src/lib/factors/crowdingMatrix.js';
+// F-14-b-6 + F-14-b-17 (2026-08-26): import the canonical computeFactorStance
+// from compositeEngine.js. Previously this file shipped a local
+// `computeStanceFromSpread` that mirrored computeFactorStance but drifted
+// (missing parameters: spreadPctile, confirmation, factorName). Worse, the
+// client (FactorMonitor.jsx) recomputed stances client-side and discarded
+// the server's values — two implementations guaranteed to diverge. Now both
+// server and client use the same function, eliminating drift.
+import { computeFactorStance } from '../src/lib/factors/compositeEngine.js';
 import { fetchWithTimeout } from '../src/lib/scanner/fetchWithTimeout.js';
 
 const FACTORS = ['momentum', 'size', 'volatility', 'beta', 'liquidity'];
@@ -79,69 +87,113 @@ async function fetchTopCryptoByMcap(limit = 100, cryptoUniverse = null) {
  * Falls back to Bybit if OKX doesn't list the symbol.
  */
 async function fetchCryptoCandles(symbol, limit = 365) {
-  // Try OKX SWAP (perps) first
-  const okxUrl = `https://www.okx.com/api/v5/market/candles?instId=${symbol}-USDT-SWAP&bar=1D&limit=${Math.min(limit, 300)}`;
-  try {
-    const res = await fetchWithTimeout(okxUrl, {
+  // F-14-b-11 (2026-08-26): Paginate OKX + Bybit fetches to ensure we get
+  // ≥252 candles for the 252-day momentum window. Previously OKX capped at
+  // 300 (sufficient) but Bybit capped at 200 (insufficient — fell through to
+  // the buggy 30-251 day momentum fallback in factorEngine.js). Now we
+  // paginate Bybit with 2 calls (200 + (limit-200)) when limit > 200.
+  // OKX supports up to 300 per call; if limit > 300 we paginate OKX too.
+  const okxFetch = async (instId, maxBars) => {
+    const url = `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=1D&limit=${Math.min(maxBars, 300)}`;
+    const res = await fetchWithTimeout(url, {
       headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
     }, 10000);
-    if (res.ok) {
-      const d = await res.json();
-      if (d.code === '0' && d.data?.length > 0) {
-        const candles = d.data.reverse().map(k => ({
-          ts: parseInt(k[0]),
-          open: parseFloat(k[1]),
-          high: parseFloat(k[2]),
-          low: parseFloat(k[3]),
-          close: parseFloat(k[4]),
-          vol: parseFloat(k[5]),
-        })).filter(c => c.close > 0);
-        if (candles.length >= 30) return candles;
-      }
+    if (!res.ok) return [];
+    const d = await res.json();
+    if (d.code !== '0' || !d.data?.length) return [];
+    return d.data.reverse().map(k => ({
+      ts: parseInt(k[0]),
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      vol: parseFloat(k[5]),
+    })).filter(c => c.close > 0);
+  };
+
+  const bybitFetch = async (sym, maxBars) => {
+    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${sym}USDT&interval=D&limit=${Math.min(maxBars, 200)}`;
+    const res = await fetchWithTimeout(url, {
+      headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
+    }, 10000);
+    if (!res.ok) return [];
+    const d = await res.json();
+    if (d.retCode !== 0 || !d.result?.list?.length) return [];
+    return d.result.list.reverse().map(k => ({
+      ts: parseInt(k[0]),
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      vol: parseFloat(k[5]),
+    })).filter(c => c.close > 0);
+  };
+
+  // Merge two candle arrays (oldest-first), deduping by ts.
+  const mergeCandles = (a, b) => {
+    const seen = new Map();
+    for (const c of [...a, ...b]) {
+      if (!seen.has(c.ts)) seen.set(c.ts, c);
     }
-  } catch {}
+    return Array.from(seen.values()).sort((x, y) => x.ts - y.ts);
+  };
+
+  // Try OKX SWAP (perps) first, paginating if needed
+  let candles = await okxFetch(`${symbol}-USDT-SWAP`, limit);
+  if (candles.length >= 30 && candles.length < limit) {
+    // Paginate: fetch older candles using the oldest ts as the 'before' cursor
+    const before = candles[0]?.ts ? new Date(candles[0].ts).toISOString() : undefined;
+    if (before) {
+      const url = `https://www.okx.com/api/v5/market/history-candles?instId=${symbol}-USDT-SWAP&bar=1D&limit=${Math.min(limit - candles.length, 300)}&before=${before}`;
+      try {
+        const res = await fetchWithTimeout(url, {
+          headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
+        }, 10000);
+        if (res.ok) {
+          const d = await res.json();
+          if (d.code === '0' && d.data?.length) {
+            const older = d.data.reverse().map(k => ({
+              ts: parseInt(k[0]), open: parseFloat(k[1]), high: parseFloat(k[2]),
+              low: parseFloat(k[3]), close: parseFloat(k[4]), vol: parseFloat(k[5]),
+            })).filter(c => c.close > 0);
+            candles = mergeCandles(older, candles);
+          }
+        }
+      } catch {}
+    }
+  }
+  if (candles.length >= 30) return candles;
 
   // Fall back to OKX SPOT
-  const okxSpotUrl = `https://www.okx.com/api/v5/market/candles?instId=${symbol}-USDT&bar=1D&limit=${Math.min(limit, 300)}`;
-  try {
-    const res = await fetchWithTimeout(okxSpotUrl, {
-      headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
-    }, 10000);
-    if (res.ok) {
-      const d = await res.json();
-      if (d.code === '0' && d.data?.length > 0) {
-        return d.data.reverse().map(k => ({
-          ts: parseInt(k[0]),
-          open: parseFloat(k[1]),
-          high: parseFloat(k[2]),
-          low: parseFloat(k[3]),
-          close: parseFloat(k[4]),
-          vol: parseFloat(k[5]),
-        })).filter(c => c.close > 0);
-      }
-    }
-  } catch {}
+  candles = await okxFetch(`${symbol}-USDT`, limit);
+  if (candles.length >= 30) return candles;
 
-  // Fall back to Bybit
-  const bybitUrl = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol}USDT&interval=D&limit=${Math.min(limit, 200)}`;
-  try {
-    const res = await fetchWithTimeout(bybitUrl, {
-      headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
-    }, 10000);
-    if (res.ok) {
-      const d = await res.json();
-      if (d.retCode === 0 && d.result?.list?.length > 0) {
-        return d.result.list.reverse().map(k => ({
-          ts: parseInt(k[0]),
-          open: parseFloat(k[1]),
-          high: parseFloat(k[2]),
-          low: parseFloat(k[3]),
-          close: parseFloat(k[4]),
-          vol: parseFloat(k[5]),
-        })).filter(c => c.close > 0);
-      }
+  // Fall back to Bybit — paginate to exceed 200-cap when limit > 200
+  candles = await bybitFetch(symbol, Math.min(limit, 200));
+  if (candles.length > 0 && limit > 200 && candles.length < limit) {
+    // Bybit v5 supports `end` cursor (timestamp in ms). Fetch the next batch
+    // ending just before the oldest candle we already have.
+    const end = candles[0]?.ts ? candles[0].ts - 1 : undefined;
+    if (end) {
+      const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol}USDT&interval=D&limit=${Math.min(limit - candles.length, 200)}&end=${end}`;
+      try {
+        const res = await fetchWithTimeout(url, {
+          headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
+        }, 10000);
+        if (res.ok) {
+          const d = await res.json();
+          if (d.retCode === 0 && d.result?.list?.length) {
+            const older = d.result.list.reverse().map(k => ({
+              ts: parseInt(k[0]), open: parseFloat(k[1]), high: parseFloat(k[2]),
+              low: parseFloat(k[3]), close: parseFloat(k[4]), vol: parseFloat(k[5]),
+            })).filter(c => c.close > 0);
+            candles = mergeCandles(older, candles);
+          }
+        }
+      } catch {}
     }
-  } catch {}
+  }
+  if (candles.length >= 30) return candles;
 
   return [];
 }
@@ -162,8 +214,15 @@ export async function computeCryptoFactors(prevSnapshot, cryptoUniverse = null) 
     return null;
   }
 
-  // 2. Fetch candles (batched, 5 at a time to be respectful)
-  const batchSize = 5;
+  // 2. Fetch candles (batched, 10 at a time — Promise.allSettled provides
+  // concurrency control; no artificial pause needed between batches).
+  // F-14-b-18 (2026-08-26): removed the 500ms × 20 batch pause (~10s saved
+  // per snapshot build). The previous batchSize=5 with 500ms pause between
+  // batches added ~10s of pure sleep per snapshot. Promise.allSettled already
+  // limits concurrency to batchSize at a time, and exchange APIs handle 10
+  // concurrent requests without rate-limit issues. batchSize bumped 5→10 to
+  // halve the number of sequential waves from 20 to 10.
+  const batchSize = 10;
   const universe = [];
 
   for (let i = 0; i < topCoins.length; i += batchSize) {
@@ -193,11 +252,7 @@ export async function computeCryptoFactors(prevSnapshot, cryptoUniverse = null) 
         universe.push(r.value);
       }
     }
-
-    // Brief pause between batches
-    if (i + batchSize < topCoins.length) {
-      await new Promise(r => setTimeout(r, 500));
-    }
+    // No pause between batches — Promise.allSettled already throttles
   }
 
   if (universe.length < 20) {
@@ -278,14 +333,22 @@ export async function computeCryptoFactors(prevSnapshot, cryptoUniverse = null) 
   // snapshot so the Factor Monitor renders fully on first paint.
   const quilt = buildQuilt(portfoliosByFactor, candlesBySymbol);
 
-  // 13. Compute factor stances using the crowding data
+  // 13. Compute factor stances using the canonical computeFactorStance
+  // (F-14-b-6 + F-14-b-17, 2026-08-26): now uses the SAME function the
+  // client uses, eliminating drift. The snapshot's `stances` field now
+  // contains the full FactorStance shape ({ stance, confidence, rationale,
+  // color, gates, raw }) so FactorMonitor.jsx can use them directly without
+  // recomputing.
   const stances = {};
   for (const row of Object.values(spreadMonitor)) {
     const spread20d = row.spread_20d || {};
-    stances[row.factor] = {
-      stance: computeStanceFromSpread(spread20d, confirmedRotation, historyCrowding.maxCorrelation(row.factor)),
-      factor: row.factor,
-    };
+    stances[row.factor] = computeFactorStance({
+      spreadZ: spread20d.z,
+      spreadPctile: spread20d.pctile,
+      rotation: confirmedRotation.currentLabel === row.factor ? confirmedRotation : null,
+      crowdingScore: historyCrowding.maxCorrelation(row.factor),
+      factorName: row.factor,
+    });
   }
 
   console.log(`  ✓ Crypto factors: ${universe.length} assets, leader=${rotation.leader_20d}, history=${factorHistory.length} days, spread_history=${spreadHistory.length} days, quilt=${quilt?.length || 0} months`);
@@ -345,43 +408,10 @@ export async function computeCryptoFactors(prevSnapshot, cryptoUniverse = null) 
   };
 }
 
-/**
- * Lightweight stance computation for server-side use.
- * Mirrors computeFactorStance but without importing the full compositeEngine
- * (which has React-incompatible import paths in some environments).
- */
-function computeStanceFromSpread(spread20d, rotation, crowdingScore) {
-  const z = spread20d?.z ?? 0;
-  const absZ = Math.abs(z);
-  const crowded = (crowdingScore ?? 0) > 0.7;
-  const confirmed = rotation?.confirmed ?? false;
-
-  let stance, confidence;
-
-  if (absZ >= 2.0 && confirmed && !crowded) {
-    stance = 'CONSTRUCTIVE';
-    confidence = 7;
-  } else if (absZ >= 2.0 && confirmed && crowded) {
-    stance = 'SELECTIVE';
-    confidence = 5;
-  } else if (absZ >= 2.0 && !confirmed) {
-    stance = 'WAIT';
-    confidence = 3;
-  } else if (absZ >= 1.0 && confirmed) {
-    stance = 'SELECTIVE';
-    confidence = 5;
-  } else if (absZ >= 2.0 && z < 0) {
-    stance = 'DEFENSIVE';
-    confidence = 6;
-  } else {
-    stance = 'WAIT';
-    confidence = 2;
-  }
-
-  if (crowded && stance === 'CONSTRUCTIVE') {
-    stance = 'SELECTIVE';
-    confidence = Math.min(confidence, 5);
-  }
-
-  return { stance, confidence, crowdingScore };
-}
+// F-14-b-6 + F-14-b-17 (2026-08-26): the local `computeStanceFromSpread`
+// function has been deleted. The server now imports `computeFactorStance`
+// from `../src/lib/factors/compositeEngine.js` and uses it directly, so the
+// server and client share a single canonical implementation. The snapshot's
+// `stances` field now contains the full FactorStance shape (stance,
+// confidence, rationale, color, gates, raw) — FactorMonitor.jsx can use
+// them directly without recomputing client-side.
