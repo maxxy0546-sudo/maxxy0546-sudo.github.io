@@ -95,18 +95,26 @@ export async function fetchCandles(symbol, timeframe = '1D', limit = 300) {
   // Free tier: max 500 outputsize, 1 year history
   const outputsize = Math.min(limit, 365);
   
+  // F-14-e-7 (2026-08-26): API key moved from query param to Authorization
+  // header. Previously `?apikey=${apiKey}` exposed the Twelve Data key in
+  // network logs, browser history, and referrers. Twelve Data supports
+  // header auth per their docs (https://twelvedata.com/docs#authentication)
+  // — `Authorization: apikey ${apiKey}`. Header auth is the secure default.
   const params = new URLSearchParams({
     symbol: tdSymbol,
     interval,
     outputsize: outputsize.toString(),
-    apikey: apiKey,
     format: 'JSON',
   });
-  
+
   const url = `${BASE}/time_series?${params}`;
-  
+
   try {
-    const res = await fetchWithTimeout(url);
+    const res = await fetchWithTimeout(url, {
+      headers: {
+        'Authorization': `apikey ${apiKey}`,
+      },
+    });
     if (!res.ok) return null;
     const d = await res.json();
     

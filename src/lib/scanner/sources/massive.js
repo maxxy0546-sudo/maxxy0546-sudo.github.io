@@ -149,10 +149,22 @@ export async function fetchCandles(symbol, timeframe = '1D', limit = 300) {
 
   const url = `${BASE_URL}/v2/aggs/ticker/${encodeURIComponent(ticker)}` +
               `/range/${tf.multiplier}/${tf.timespan}/${fromDate}/${toDate}` +
-              `?adjusted=false&sort=asc&limit=${Math.min(limit, 50000)}&apiKey=${apiKey}`;
+              `?adjusted=false&sort=asc&limit=${Math.min(limit, 50000)}`;
 
+  // F-14-e-7 (2026-08-26): API key moved from query param to Authorization
+  // header. Previously `?apiKey=${apiKey}` exposed the paid Polygon key in:
+  //   - Network logs (any proxy/CDN between user and api.polygon.io)
+  //   - Browser history (the URL with key is recorded)
+  //   - Referrers (if Polygon redirects, the key goes in Referer header)
+  // Polygon supports header auth (`Authorization: Bearer ${apiKey}`) and
+  // treats it identically to query-param auth. Header auth is the secure
+  // default per Twelve Data, Alpha Vantage, and Polygon's own docs.
   try {
-    const res = await fetchWithTimeout(url);
+    const res = await fetchWithTimeout(url, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
     if (!res.ok) {
       if (res.status === 403 || res.status === 429) {
         // NOT_AUTHORIZED or rate-limited — don't log spam, just return null
