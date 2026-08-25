@@ -85,7 +85,18 @@ function timingSafeEqual(a, b) {
   return diff === 0;
 }
 
-// In-memory state (resets on Worker restart, but useful for the fetch handler)
+// In-memory state (resets on Worker restart)
+// F-14-b-5 (2026-08-26): user chose option (c) — accept isolate-local
+// state, remove the unreliable status endpoint. The previous status
+// endpoint (GET /) returned _lastDispatch / _lastRunId / _lastError
+// from isolate-local `let` variables that weren't shared across Worker
+// isolates. The endpoint was therefore unreliable (different isolates
+// could report different state) and also leaked operational info
+// (last_error contained a 200-char slice of GitHub API responses —
+// F-14-b-4). The status endpoint is now removed entirely; the /trigger
+// endpoint (POST, X-Worker-Token gated) remains for ad-hoc manual
+// triggers. Users who want to check refresh status should look at the
+// GitHub Actions tab directly, which is the authoritative source.
 let _lastDispatch = null;
 let _lastRunId = null;
 let _lastError = null;
@@ -195,36 +206,58 @@ export default {
   /**
    * HTTP fetch handler — for manual testing and status checks.
    *
-   * GET /            → returns last dispatch status (no auth required)
-   * POST /trigger    → manually triggers a refresh (requires X-Worker-Token header
-   *                    matching WORKER_TOKEN secret, for ad-hoc testing)
+   * F-14-b-5 (2026-08-26): GET / status endpoint removed. The isolate-local
+   * state variables (_lastDispatch, _lastRunId, _lastError) are not shared
+   * across Worker isolates, so the status response was unreliable.
+   * Users who want to check refresh status should look at the GitHub
+   * Actions tab directly.
+   *
+   * POST /trigger → manually triggers a refresh (requires X-Worker-Token
+   *                   header matching WORKER_TOKEN secret, for ad-hoc
+   *                   testing). F-14-b-4: CORS restricted to TrendScan
+   *                   origins only — previously allowed any origin (*),
+   *                   which exposed the endpoint to cross-site requests.
    */
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // CORS headers for browser access (status endpoint)
+    // F-14-b-4 (2026-08-26): CORS restricted to TrendScan origins only.
+    // Previously `Access-Control-Allow-Origin: *` allowed any website to
+    // call the status / trigger endpoints. The trigger endpoint is gated
+    // by X-Worker-Token (so abuse is bounded), but the status endpoint
+    // exposed last_error containing GitHub API request URLs + rate-limit
+    // hints — useful for reconnaissance. Now only TrendScan origins can
+    // make cross-origin requests; same-origin requests (e.g., from the
+    // deployed site) are allowed automatically.
+    const allowedOrigins = [
+      'https://trend-scan.github.io',
+      'https://trendscan.github.io',
+    ];
+    const requestOrigin = request.headers.get('Origin') || '';
+    const isAllowedOrigin = !requestOrigin || allowedOrigins.includes(requestOrigin);
+    const corsOrigin = isAllowedOrigin ? (requestOrigin || allowedOrigins[0]) : 'null';
+
     const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Origin': corsOrigin,
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, X-Worker-Token',
+      'Vary': 'Origin',
     };
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
 
+    // F-14-b-5: GET / status endpoint removed (see file-header note).
+    // Return 404 with a helpful message for anyone who cached the old URL.
     if (url.pathname === '/' && request.method === 'GET') {
-      // Status endpoint — no auth, returns last dispatch info
       return new Response(JSON.stringify({
-        ok: _lastError == null,
-        worker: 'trendscan-refresh-trigger',
+        error: 'Status endpoint removed (F-14-b-5, 2026-08-26).',
+        hint: 'Check GitHub Actions tab for refresh-snapshot workflow runs.',
         repo: `${REPO_OWNER}/${REPO_NAME}`,
         workflow: WORKFLOW_ID,
-        last_dispatch: _lastDispatch,
-        last_run: _lastRunId,
-        last_error: _lastError,
-        now: new Date().toISOString(),
-      }, null, 2), {
+      }), {
+        status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
