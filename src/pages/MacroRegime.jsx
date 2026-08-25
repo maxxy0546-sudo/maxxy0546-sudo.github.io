@@ -3,7 +3,7 @@
  * Three-composite nowcasting engine with TOTAL3ES allocation
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import RegimeCard from '../components/regime/RegimeCard';
 import CompositeGauge from '../components/regime/CompositeGauge';
@@ -241,6 +241,22 @@ export default function MacroRegime() {
   // snapshot baseline. If rawData is available, we use the live-computed
   // regime (which has meZ, impulseZ, full signals arrays). If rawData is
   // not yet loaded, we fall back to the snapshot regime.
+  //
+  // F-14-d-4 (2026-08-26): compositeHistoryRef maintains a rolling history
+  // of growthZ/inflationZ/liquidityZ values across renders. impulseZ
+  // requires compositeSeries.length >= deltaPeriod + normPeriod = 65 to
+  // produce a non-zero value. Previously the live regime called
+  // computeNowcast([growthZ]) (single-element array) — impulseZ was always
+  // 0, and 50% of the nowcast signal was lost. History accumulates during
+  // the session and resets when the component unmounts (Pine Script warmup
+  // parity). Capped at 90 entries to bound memory.
+  const compositeHistoryRef = useRef({
+    growth: [],
+    inflation: [],
+    liquidity: [],
+    lastTimestamp: null,
+  });
+
   const liveRegime = useMemo(() => {
     if (!rawData) return null;
 
@@ -271,7 +287,6 @@ export default function MacroRegime() {
       fredAvailable,
     });
     const growthZ = weightedComposite(growthSignals);
-    const growthNowcast = computeNowcast([growthZ]);
     const growthLabel = classifyGrowthRegime(growthZ);
 
     // Top growth drivers
@@ -291,7 +306,6 @@ export default function MacroRegime() {
       fredAvailable,
     });
     const inflationZ = weightedComposite(inflationSignals);
-    const inflationNowcast = computeNowcast([inflationZ]);
     const inflationLabel = classifyInflationRegime(inflationZ);
 
     // Top inflation drivers
@@ -313,7 +327,6 @@ export default function MacroRegime() {
       fredAvailable,
     });
     const liquidityZ = weightedComposite(liquiditySignals);
-    const liquidityNowcast = computeNowcast([liquidityZ]);
     const liquidityLabel = classifyLiquidityRegime(liquidityZ);
 
     // Top liquidity drivers
@@ -322,6 +335,35 @@ export default function MacroRegime() {
       .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
       .slice(0, 3)
       .map(s => ({ name: s.name, value: s.value }));
+
+    // F-14-d-4 (2026-08-26): append current Z values to the rolling history
+    // ref so computeNowcast has a compositeSeries long enough for impulseZ
+    // to produce a non-zero value (requires >= 65 entries). Deduplicate by
+    // rawData.lastUpdated so the same data fetch doesn't double-count. Cap
+    // at 90 entries to bound memory (matches the snapshot's cap).
+    const hist = compositeHistoryRef.current;
+    const currentTs = rawData.lastUpdated;
+    if (currentTs && currentTs !== hist.lastTimestamp) {
+      hist.growth.push(growthZ);
+      hist.inflation.push(inflationZ);
+      hist.liquidity.push(liquidityZ);
+      hist.lastTimestamp = currentTs;
+      if (hist.growth.length > 90) {
+        hist.growth = hist.growth.slice(-90);
+        hist.inflation = hist.inflation.slice(-90);
+        hist.liquidity = hist.liquidity.slice(-90);
+      }
+    }
+
+    // Now compute nowcasts with the full history (not [growthZ] single-element).
+    // F-14-d-4: impulseZ now has a chance to be non-zero once history >= 65.
+    // F-14-d-8: computeNowcast returns { meZ, impulseZ, nowcast, score } — the
+    // score field is meScore (zToScore of meZ), needed by CompositeGauge's
+    // "Comp" column which previously always showed 50.0 because score wasn't
+    // propagated through the snapshot/live merge below.
+    const growthNowcast = computeNowcast(hist.growth);
+    const inflationNowcast = computeNowcast(hist.inflation);
+    const liquidityNowcast = computeNowcast(hist.liquidity);
 
     // Classify regime
     const { quadrant, liquidity, label } = classifyRegime(
@@ -490,7 +532,15 @@ export default function MacroRegime() {
     if (!liveRegime) return snapshotRegime;
 
     // MERGE: start with snapshot (authoritative verdicts), then overlay
-    // live-only display fields (meZ, impulseZ, full signals arrays).
+    // live-only display fields (meZ, impulseZ, score, full signals arrays).
+    //
+    // F-14-d-8 (2026-08-26): propagate `score` from the live regime through
+    // the merge. Previously the snapshot's growth/inflation/liquidityData
+    // objects didn't include a `score` field, and the merge didn't overlay
+    // it, so the CompositeGauge's "Comp" column always displayed 50.0
+    // (zToScore(0) = 50). Now the live regime's score (zToScore of the
+    // current composite meZ) is overlaid on the snapshot, so "Comp"
+    // reflects the actual growth/inflation/liquidity composite strength.
     return {
       ...snapshotRegime,
       // Live-enriched display fields (don't affect verdicts):
@@ -498,6 +548,7 @@ export default function MacroRegime() {
         ...snapshotRegime.growth,
         meZ: liveRegime.growth?.meZ ?? snapshotRegime.growth.meZ,
         impulseZ: liveRegime.growth?.impulseZ ?? snapshotRegime.growth.impulseZ,
+        score: liveRegime.growth?.score ?? snapshotRegime.growth.score ?? 50,
         // Use live signals array for the CompositeGauge's signal list display
         // (snapshot only stores topDrivers, not the full array)
         signals: liveRegime.growth?.signals?.length > 0
@@ -508,6 +559,7 @@ export default function MacroRegime() {
         ...snapshotRegime.inflation,
         meZ: liveRegime.inflation?.meZ ?? snapshotRegime.inflation.meZ,
         impulseZ: liveRegime.inflation?.impulseZ ?? snapshotRegime.inflation.impulseZ,
+        score: liveRegime.inflation?.score ?? snapshotRegime.inflation.score ?? 50,
         signals: liveRegime.inflation?.signals?.length > 0
           ? liveRegime.inflation.signals
           : snapshotRegime.inflation.signals,
@@ -516,6 +568,7 @@ export default function MacroRegime() {
         ...snapshotRegime.liquidityData,
         meZ: liveRegime.liquidityData?.meZ ?? snapshotRegime.liquidityData.meZ,
         impulseZ: liveRegime.liquidityData?.impulseZ ?? snapshotRegime.liquidityData.impulseZ,
+        score: liveRegime.liquidityData?.score ?? snapshotRegime.liquidityData.score ?? 50,
         signals: liveRegime.liquidityData?.signals?.length > 0
           ? liveRegime.liquidityData.signals
           : snapshotRegime.liquidityData.signals,
