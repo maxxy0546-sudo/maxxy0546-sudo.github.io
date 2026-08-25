@@ -186,24 +186,16 @@ export async function isSupported(symbol) {
 }
 
 /**
- * Check if a symbol is a Binance TRADIFI_PERPETUAL (tokenized stock perp).
- * Used by the TradFi scanner mode to route symbols to this source.
- * @param {string} symbol - bare symbol (e.g. 'SPY', 'NVDA')
- * @returns {Promise<boolean>}
- */
-export async function isTradfiPerp(symbol) {
-  await loadUniverse();
-  if (!_tradfiSet) return false;  // universe fetch failed — don't claim support
-  return _tradfiSet.has(symbol.toUpperCase());
-}
-
-/**
  * Get all Binance TRADIFI_PERPETUAL symbols (bare, no 1000x prefix).
  * Used by the TradFi scanner mode to know which symbols can use intraday
  * timeframes via Binance perps (vs. daily-only from snapshot).
+ *
+ * Audit F-14-e-10 (2026-08-26): sibling `isTradfiPerp` removed — zero callers
+ * (the canonical entry is this `getTradfiPerpSymbols` + `supports`).
+ *
  * @returns {Promise<string[]>}
  */
-export async function getTradfiPerpSymbols() {
+export async function getTradfiPerpSymbols(symbol) {
   await loadUniverse();
   if (!_tradfiSet) return [];
   return Array.from(_tradfiSet);

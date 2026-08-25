@@ -19,7 +19,10 @@
  */
 
 import { fetchAllMacro, computeNetLiquidity } from './macroResolver.js';
-import { fetchCandles as resolverFetchCandles } from '../scanner/sourceResolver.js';
+// Audit F-14-d-17 (2026-08-26): `fetchCandles as resolverFetchCandles` import
+// removed — was only used by the now-deleted fetchMassiveCryptoOHLC +
+// fetchMassiveForexOHLC shims. Crypto OHLC for the regime engine is fetched
+// inline via Binance/Kraken below.
 
 // ─── Fetch Helpers ─────────────────────────────────────────────────────────────
 
@@ -184,43 +187,10 @@ export async function fetchAllFredData() {
 // The original Massive/Polygon direct fetchers are replaced with sourceResolver calls.
 // They still work (kept for backward compat with any external callers) but now route
 // through CoinGecko/Hyperliquid/Bybit/etc. — no API key needed.
-
-export async function fetchMassiveCryptoOHLC(ticker, limit = 365) {
-  try {
-    const { candles } = await resolverFetchCandles(ticker, { timeframe: '1D', limit });
-    if (!candles) return null;
-    return candles.map(c => ({
-      time: c.ts,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      volume: c.vol,
-    }));
-  } catch (e) {
-    console.warn('Crypto OHLC fetch failed:', e.message);
-    return null;
-  }
-}
-
-export async function fetchMassiveForexOHLC(pair, limit = 365) {
-  // Forex pairs (e.g. EURUSD, GBPUSD) — Lighter has these as perps
-  try {
-    const { candles } = await resolverFetchCandles(pair, { timeframe: '1D', limit, type: 'tradfi' });
-    if (!candles) return null;
-    return candles.map(c => ({
-      time: c.ts,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      volume: c.vol,
-    }));
-  } catch (e) {
-    console.warn('Forex OHLC fetch failed:', e.message);
-    return null;
-  }
-}
+//
+// Audit F-14-d-17 (2026-08-26): fetchMassiveCryptoOHLC + fetchMassiveForexOHLC
+// removed — zero callers across src/. They were backward-compat shims for the
+// pre-CoinGecko era; resolver.fetchCandles is now the canonical fetch path.
 
 // ─── Main Data Fetcher ─────────────────────────────────────────────────────────
 

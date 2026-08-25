@@ -50,7 +50,10 @@ export default [
       "react/react-in-jsx-scope": "off",
       "react/no-unknown-property": [
         "error",
-        { ignore: ["cmdk-input-wrapper", "toast-close"] },
+        // Audit F-14-g-6 (2026-08-26): removed `cmdk-input-wrapper` from the
+        // ignore list — cmdk was removed from package.json (leftover from a
+        // removed feature). Keep `toast-close` (used by use-toast.jsx).
+        { ignore: ["toast-close"] },
       ],
       "react-hooks/rules-of-hooks": "error",
       "no-undef": "error",

@@ -225,36 +225,12 @@ export async function fetchCandlesBatch(symbols, opts = {}, concurrency = 7) {
   return results;
 }
 
-/**
- * Return which sources are likely available for a symbol (for UI display).
- */
-export async function getAvailableSources(symbol) {
-  const type = classifySymbol(symbol);
-  const list = type === 'tradfi' ? TRADFI_SOURCES : CRYPTO_SOURCES;
-  const available = [];
-  for (const src of list) {
-    if (src.supports) {
-      const ok = await src.supports(symbol);
-      if (ok) available.push(src.id);
-    } else {
-      available.push(src.id);
-    }
-  }
-  return available;
-}
-
-/**
- * Health summary for UI display (per-symbol failures).
- */
-export function getSourceHealth() {
-  const out = [];
-  for (const [k, f] of _failures.entries()) {
-    const [source, symbol] = k.split(':');
-    if (Date.now() - f.lastFail > FAILURE_TTL_MS) continue;
-    out.push({ source, symbol, failures: f.count, lastFail: f.lastFail });
-  }
-  return out;
-}
+// Audit F-14-e-10 (2026-08-26): `getAvailableSources` + `getSourceHealth`
+// removed — zero callers across src/ + tests. The canonical UI entry points
+// are `getGloballyBlockedSources()` (used by Board.jsx) and `fetchCandles()`
+// (used everywhere). The internal `_failures` Map remains in scope for the
+// blocking-decision logic, but is no longer surfaced as a per-symbol health
+// summary (no consumer ever read it).
 
 /**
  * List of sources currently globally blocked (geo-restricted in this region).

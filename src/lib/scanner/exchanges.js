@@ -383,71 +383,10 @@ async function fetchXStocksCandles(symbol, timeframe = '1D', limit = 300) {
   }
 }
 
-// ── MASSIVE (POLYGON) ─────────────────────
-const MASSIVE_INTERVAL_MAP = {
-  '15m': { multiplier: 15, timespan: 'minute' },
-  '30m': { multiplier: 30, timespan: 'minute' },
-  '1H': { multiplier: 1, timespan: 'hour' },
-  '4H': { multiplier: 4, timespan: 'hour' },
-  '12H': { multiplier: 12, timespan: 'hour' },
-  '1D': { multiplier: 1, timespan: 'day' },
-};
-
-function toMassiveTicker(symbol) {
-  return `X:${symbol}USD`;
-}
-
-async function fetchMassiveCandles(symbol, timeframe = '4H', limit = 300) {
-  // SECURITY: Read from localStorage ONLY — NOT from import.meta.env.
-  // VITE_-prefixed env vars get baked into the client bundle, exposing the
-  // paid Polygon key. The VITE_MASSIVE_API_KEY GitHub Actions secret was
-  // removed on 2026-07-16 (see SECURITY.md). Users who want Polygon must
-  // set it via localStorage.setItem('MASSIVE_API_KEY', '...') at runtime.
-  // This aligns with the security policy in src/lib/scanner/sources/massive.js.
-  const apiKey = typeof window !== 'undefined'
-    ? localStorage.getItem('MASSIVE_API_KEY')
-    : null;
-
-  if (!apiKey) {
-    console.warn('Massive API key not configured. Set MASSIVE_API_KEY in localStorage (see SECURITY.md).');
-    return null;
-  }
-
-  const tf = MASSIVE_INTERVAL_MAP[timeframe] || MASSIVE_INTERVAL_MAP['4H'];
-  const ticker = toMassiveTicker(symbol);
-
-  // Calculate date range
-  const to = new Date();
-  const from = new Date(to.getTime() - (limit * getIntervalMs(timeframe)));
-
-  const url = `https://api.massive.com/v2/aggs/ticker/${ticker}/range/${tf.multiplier}/${tf.timespan}/${from.toISOString()}/${to.toISOString()}?adjusted=false&sort=asc&limit=${limit}&apiKey=${apiKey}`;
-
-  try {
-    const response = await fetchWithTimeout(url);
-    if (!response.ok) {
-      console.warn(`Massive API error ${response.status} for ${symbol}`);
-      return null;
-    }
-
-    const data = await response.json();
-    if (data.status !== 'OK' || !data.results) {
-      return null;
-    }
-
-    return data.results.map(candle => ({
-      ts: candle.t,
-      open: candle.o,
-      high: candle.h,
-      low: candle.l,
-      close: candle.c,
-      vol: candle.v,
-      vwap: candle.vw,
-    }));
-  } catch (error) {
-    console.warn(`Massive fetch error for ${symbol}:`, error.message);
-    return null;
-  }
-}
+// Audit F-14-e-10 (2026-08-26): the MASSIVE (Polygon) block —
+// `MASSIVE_INTERVAL_MAP`, `toMassiveTicker`, `fetchMassiveCandles` —
+// was dead code (zero callers across src/). The canonical Polygon path now
+// lives in `src/lib/scanner/sources/massive.js` (exported via sourceResolver).
 
 function getIntervalMs(timeframe) {
   const map = {
@@ -818,6 +757,5 @@ export async function fetchTop500(cgKey) {
   return filterUniverse(assets).slice(0, 500);
 }
 
-// Backward-compat alias — any code that still calls fetchTop300 gets the new
-// top-500 function (returns up to 500, callers that .slice(0, 300) still work).
-export const fetchTop300 = fetchTop500;
+// Audit F-14-e-10 (2026-08-26): `export const fetchTop300 = fetchTop500;`
+// removed — zero callers. Use `fetchTop500` directly.

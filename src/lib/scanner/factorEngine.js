@@ -263,23 +263,8 @@ export function computeSpreadMonitor(portfoliosByFactor, candlesBySymbol, benchm
   return result;
 }
 
-// Diagnostic: check if multiple factors produce identical Q5/Q1 assignments
-function detectIdenticalQuintiles(portfoliosByFactor) {
-  const factors = Object.keys(portfoliosByFactor);
-  const q5ByKey = {};
-  for (const f of factors) {
-    const key = JSON.stringify([...portfoliosByFactor[f].longOnly].sort());
-    if (!q5ByKey[key]) q5ByKey[key] = [];
-    q5ByKey[key].push(f);
-  }
-  const duplicates = Object.values(q5ByKey).filter(g => g.length > 1);
-  if (duplicates.length > 0) {
-    console.warn('[factorEngine] WARNING: Identical Q5 quintiles detected across factors:',
-      duplicates.map(g => g.join(' + ')).join(', '),
-      '\nThis means the factor scores are producing the same ranking — check if candle data differs between assets.');
-  }
-  return duplicates;
-}
+// Audit F-14-e-10 (2026-08-26): detectIdenticalQuintiles removed — zero callers
+// (was a diagnostic stub that just console.warn'd, no real effect on output).
 
 function formatFactorLabel(factor) {
   const map = {
