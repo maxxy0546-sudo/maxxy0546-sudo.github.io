@@ -367,12 +367,32 @@ export function computeOrthoS(candles, params = {}) {
   }
 
   // §6 composite (weighted avg of smoothed)
-  const composite = new Array(candles.length).fill(0);
+  //
+  // F-14-c-6 (2026-08-26): composite is null during warmup (the first
+  // zsc_len + lb - 2 bars) — matches Pine Script's ta.sma which returns
+  // NaN until enough real (non-null-guard) values have accumulated. The
+  // previous code divided by the full weight sum even during warmup, when
+  // most smoothed values were 0 (rollZscore's null-guard for null stdev),
+  // biasing the composite toward 0. Downstream `position` derivation
+  // treats null composite as "no signal" (position = 0).
+  //
+  // Why the explicit threshold? rollZscore returns 0 (not null) when
+  // stdev is null, so the per-bar activeWtSum check (`activeWtSum ===
+  // wtSum`) would incorrectly pass at bar ~lb-1, treating those 0s as
+  // real signal values. Using the explicit warmup threshold (zsc_len +
+  // lb - 2 = 83 for default params) avoids this — composite is null
+  // until the first bar where ALL smoothed values are derived from
+  // real (non-null-guard) z-scores.
+  const composite = new Array(candles.length).fill(null);
   let wtSum = 0;
   for (const name of SIGNAL_NAMES) wtSum += p.weights[name];
 
+  // Warmup: stdev needs zsc_len-1 bars, then sma smoothing needs lb-1
+  // more bars. composite[i] is null for i < warmupBars.
+  const warmupBars = p.zsc_len + p.lb - 2;
+
   if (wtSum > 0) {
-    for (let i = 0; i < candles.length; i++) {
+    for (let i = warmupBars; i < candles.length; i++) {
       let acc = 0;
       for (const name of SIGNAL_NAMES) {
         const v = smoothed[name][i];
@@ -393,6 +413,8 @@ export function computeOrthoS(candles, params = {}) {
   // §8 position
   const position = new Array(candles.length).fill(0);
   for (let i = 0; i < candles.length; i++) {
+    // F-14-c-6: null composite during warmup → no position (matches Pine).
+    if (composite[i] == null) continue;
     const rawLong  = composite[i] >  p.thresh;
     const rawShort = composite[i] < -p.thresh;
     const pivotLongOk  = !p.use_pivot || pivotSig[i] >  p.pivot_tau;
