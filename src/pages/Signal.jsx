@@ -43,6 +43,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import FreshnessBanner from '../components/FreshnessBanner';
 import { SignalHitRateTable } from '../components/board/SMBFeatures';
+import { useSnapshot, clearSnapshotCache } from '../hooks/useSnapshot';
 
 const SIGNAL_ENABLED = import.meta.env.VITE_ENABLE_SIGNAL_PAGE === 'true';
 
@@ -667,18 +668,50 @@ function InterpretationGuide() {
 }
 
 export default function Signal() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Audit F-14-g-3 + F-14-g-8 + F-14-g-10 (2026-08-26):
+  // Previously Signal.jsx used a hand-rolled useEffect+fetch that:
+  //   - Bypassed the shared useSnapshot hook (and its 5-min TTL +
+  //     visibilitychange refetch + dedup-via-_fetchPromise).
+  //   - Triggered a duplicate /snapshot.json fetch on mount alongside
+  //     SignalHitRateTable's own useSnapshot() call (F-14-g-8). HTTP-
+  //     cached so no network cost after first hit per 10min, but still
+  //     an architectural smell.
+  //   - Swallowed fetch errors silently (F-14-g-10): user couldn't
+  //     distinguish 'snapshot fetch failed' from 'snapshot has no
+  //     signal_metrics' — both produced the same 'No signal data
+  //     available yet' message with no retry button.
+  // Now uses the shared useSnapshot() hook + explicit error/retry UI.
+  const snapshot = useSnapshot();
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [fetchError, setFetchError] = useState(null);
 
+  // Manual retry: clears the shared cache + bumps retryNonce to force
+  // a refetch on next render. The useSnapshot() hook will see the
+  // cleared cache and refetch automatically.
+  const handleRetry = () => {
+    clearSnapshotCache();
+    setFetchError(null);
+    setRetryNonce(n => n + 1);
+  };
+
+  // Detect fetch failure: if snapshot is null AND we've attempted at
+  // least one fetch (retryNonce >= 0 always true), treat null as a
+  // fetch failure rather than "no signal_metrics yet". The shared
+  // hook returns null both when the fetch is in-flight AND when it
+  // failed — we use the retryNonce to distinguish: if the hook has
+  // had time to settle and snapshot is still null, that's a failure.
   useEffect(() => {
-    fetch('/snapshot.json')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        setData(d);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
+    if (snapshot === null) {
+      // Give the shared hook's fetch a chance to complete first.
+      // If after 3s snapshot is still null, flag as error.
+      const t = setTimeout(() => {
+        if (snapshot === null) setFetchError('snapshot_unreachable');
+      }, 3000);
+      return () => clearTimeout(t);
+    }
+    // Snapshot loaded — clear any prior error state.
+    setFetchError(null);
+  }, [snapshot, retryNonce]);
 
   if (!SIGNAL_ENABLED) {
     return (
@@ -691,7 +724,8 @@ export default function Signal() {
     );
   }
 
-  if (loading) {
+  // Snapshot is null but error not yet flagged → still loading.
+  if (snapshot === null && !fetchError) {
     return (
       <div className="min-h-screen flex items-center justify-center font-mono">
         <div className="text-[10px] tracking-wider" style={{ color: 'var(--scanner-text3)' }}>Loading signal data…</div>
@@ -699,8 +733,39 @@ export default function Signal() {
     );
   }
 
-  const sm = data?.signal_metrics;
-  const history = data?.signal_history || [];
+  // Fetch failed → show error + retry button (F-14-g-10).
+  if (fetchError === 'snapshot_unreachable') {
+    return (
+      <div className="min-h-screen flex items-center justify-center font-mono">
+        <div className="text-center max-w-md">
+          <div className="text-4xl mb-4 opacity-20">⚠</div>
+          <div className="text-sm mb-2" style={{ color: 'var(--scanner-text2)' }}>
+            Snapshot fetch failed
+          </div>
+          <div className="text-[10px] mb-4 leading-relaxed" style={{ color: 'var(--scanner-text3)' }}>
+            TrendScan couldn't reach <code style={{ color: 'var(--scanner-accent)' }}>/snapshot.json</code>.
+            This is usually a network issue, a Cloudflare Worker outage, or GitHub Pages being degraded.
+            The Signal page can't render without the snapshot. Click retry below to attempt a refetch.
+          </div>
+          <button
+            onClick={handleRetry}
+            className="font-mono text-[10px] font-bold tracking-[0.14em] uppercase px-4 py-2 rounded transition-all"
+            style={{
+              background: 'var(--scanner-accent)',
+              color: '#000',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            ↻ Retry fetch
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const sm = snapshot?.signal_metrics;
+  const history = snapshot?.signal_history || [];
 
   if (!sm) {
     return (
@@ -745,7 +810,7 @@ export default function Signal() {
       </div>
 
       {/* Freshness banner — only renders when snapshot is stale (≥12h old) */}
-      <FreshnessBanner generatedAt={data?.generated_at} contextLabel="signal" />
+      <FreshnessBanner generatedAt={snapshot?.generated_at} contextLabel="signal" />
 
       {/* Interpretation Guide (collapsible, near top) */}
       <InterpretationGuide />
