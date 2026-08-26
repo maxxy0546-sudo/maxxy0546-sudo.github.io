@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!--
-      F-14-g-1 (2026-08-26): Per-route OG meta tags.
+      F-14-g-1 (2026-08-26, rev. 2026-08-26): Per-route OG meta tags.
       GitHub Pages serves this 404.html for unmatched paths, including the
       SPA sub-routes (/board, /macro, /signal) before the JS redirect fires.
       Link-preview crawlers (Twitter, Slack, Discord, LinkedIn) and SEO bots
@@ -15,6 +15,19 @@
       but non-JS clients now get meaningful meta tags per-route. The route
       detection is intentionally simple (pathname.startsWith) — no DOM
       parsing needed, runs inline before any render.
+
+      OG image notes (2026-08-26 fix):
+        - og:image must point to /og-card.png (1200x630 PNG shipped in public/).
+          The earlier reference to /og-image.png was a stale filename — the
+          file never existed, so every sub-route link preview rendered with
+          a broken-image icon until now.
+        - og:image:width / og:image:height are REQUIRED by several crawlers
+          (Slack, LinkedIn, Discord) to avoid a second round-trip to fetch
+          the PNG just to read its dimensions. Without them, cards can take
+          5–10s extra to render or fall back to a tiny default.
+        - twitter:card must be summary_large_image (not summary) so the
+          1200x630 image is rendered as a wide banner rather than a square
+          thumbnail. Twitter's "summary" card crops to 1:1.
     -->
     <script>
       // Pick route-specific OG tags based on the path BEFORE setting the
@@ -34,12 +47,15 @@
         '<meta property="og:title" content="' + cfg.title + '" />',
         '<meta property="og:description" content="' + cfg.description + '" />',
         '<meta property="og:type" content="website" />',
+        '<meta property="og:site_name" content="TrendScan" />',
         '<meta property="og:url" content="https://trend-scan.github.io' + path + '" />',
-        '<meta property="og:image" content="https://trend-scan.github.io/og-image.png" />',
-        '<meta name="twitter:card" content="summary" />',
+        '<meta property="og:image" content="https://trend-scan.github.io/og-card.png" />',
+        '<meta property="og:image:width" content="1200" />',
+        '<meta property="og:image:height" content="630" />',
+        '<meta name="twitter:card" content="summary_large_image" />',
         '<meta name="twitter:title" content="' + cfg.title + '" />',
         '<meta name="twitter:description" content="' + cfg.description + '" />',
-        '<meta name="twitter:image" content="https://trend-scan.github.io/og-image.png" />'
+        '<meta name="twitter:image" content="https://trend-scan.github.io/og-card.png" />'
       );
     </script>
 
