@@ -37,6 +37,86 @@ import { fetchWithTimeout } from '../src/lib/scanner/fetchWithTimeout.js';
 
 const FACTORS = ['momentum', 'size', 'volatility', 'beta', 'liquidity'];
 
+// ── Exchange request pacing + retry (2026-08-29, "Factor Monitor always
+// WAIT" follow-up: CI universe degradation) ─────────────────────────────────
+//
+// Symptom: snapshots built on GitHub Actions runners (Azure US IPs)
+// consistently landed a 46-63 asset universe out of ~94 fetchable assets,
+// while the same code from a clean network fetches 94/100. Diagnosis:
+// OKX/Bybit rate-limit (HTTP 429) the bursty request pattern — up to 10
+// concurrent symbols × 1-4 sequential requests each with zero inter-request
+// pacing (F-14-b-18 removed the 500ms pause on the assumption that "exchange
+// APIs handle 10 concurrent requests without rate-limit issues" — a probe
+// on 2026-08-29 caught live 429s from OKX even on a clean network at that
+// concurrency). Each 429 surfaces as `!res.ok` → empty candle array → the
+// asset is SILENTLY dropped by the `candles.length < 60` gate, so 35% of
+// the universe vanished with no log line. A smaller, fluctuating universe
+// destabilizes the quintile spreads between builds and weakens every factor
+// signal derived from them.
+//
+// Fix (this block):
+//   1. PACE every OKX/Bybit request globally ≥125ms apart (~8 req/s — under
+//      OKX's 20-requests-per-2s public limit) regardless of symbol-loop
+//      concurrency.
+//   2. RETRY 429/5xx/transport failures up to 3 attempts with backoff
+//      (honoring Retry-After when sane). Other 4xx are deterministic
+//      ("symbol not listed") and not retried.
+//   3. Log dropped symbols so the loss is visible in CI logs (below, in
+//      computeCryptoFactors step 2).
+// Cost: ~20-30s per snapshot build vs the un-paced burst. Universe
+// completeness is worth far more than build seconds — a 12-per-quintile
+// universe (60 assets) has materially noisier spreads than 19-per-quintile
+// (94 assets).
+
+const PACE_MS = 125;
+let _lastReqAt = 0;
+let _paceChain = Promise.resolve();
+
+/** Serialize request STARTS at least PACE_MS apart (global, module-level). */
+function _pacedStart() {
+  const run = async () => {
+    const wait = Math.max(0, _lastReqAt + PACE_MS - Date.now());
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    _lastReqAt = Date.now();
+  };
+  // Re-assign the chain so later callers queue behind this slot; errors in
+  // the pacer itself must never break the queue.
+  _paceChain = _paceChain.then(run, run);
+  return _paceChain;
+}
+
+/**
+ * Fetch an exchange endpoint with global pacing + retry on transient errors.
+ * @returns {Promise<Response|null>} Response, or null when every attempt
+ *   failed on a transient condition (429/5xx/timeout/network).
+ */
+async function fetchExchange(url, timeoutMs = 10000) {
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    await _pacedStart();
+    try {
+      const res = await fetchWithTimeout(url, {
+        headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
+      }, timeoutMs);
+      if (res.status === 429 || res.status >= 500) {
+        if (attempt === MAX_ATTEMPTS) return res;  // let caller's !ok path handle it
+        const retryAfterSec = parseInt(res.headers.get('retry-after') || '', 10);
+        const backoff = Number.isFinite(retryAfterSec) && retryAfterSec > 0 && retryAfterSec <= 5
+          ? retryAfterSec * 1000
+          : 700 * attempt;
+        await new Promise(r => setTimeout(r, backoff));
+        continue;
+      }
+      return res;
+    } catch {
+      // Timeout or network error — transient, worth one more paced attempt.
+      if (attempt === MAX_ATTEMPTS) return null;
+      await new Promise(r => setTimeout(r, 700 * attempt));
+    }
+  }
+  return null;
+}
+
 /**
  * Fetch top 100 crypto by market cap.
  * Primary: CMC crypto_universe (already fetched by build_snapshot.js, no extra API call).
@@ -113,10 +193,8 @@ async function fetchCryptoCandles(symbol, limit = 365) {
   // OKX supports up to 300 per call; if limit > 300 we paginate OKX too.
   const okxFetch = async (instId, maxBars) => {
     const url = `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=1D&limit=${Math.min(maxBars, 300)}`;
-    const res = await fetchWithTimeout(url, {
-      headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
-    }, 10000);
-    if (!res.ok) return [];
+    const res = await fetchExchange(url);
+    if (!res || !res.ok) return [];
     const d = await res.json();
     if (d.code !== '0' || !d.data?.length) return [];
     return d.data.reverse().map(k => ({
@@ -131,10 +209,8 @@ async function fetchCryptoCandles(symbol, limit = 365) {
 
   const bybitFetch = async (sym, maxBars) => {
     const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${sym}USDT&interval=D&limit=${Math.min(maxBars, 200)}`;
-    const res = await fetchWithTimeout(url, {
-      headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
-    }, 10000);
-    if (!res.ok) return [];
+    const res = await fetchExchange(url);
+    if (!res || !res.ok) return [];
     const d = await res.json();
     if (d.retCode !== 0 || !d.result?.list?.length) return [];
     return d.result.list.reverse().map(k => ({
@@ -164,10 +240,8 @@ async function fetchCryptoCandles(symbol, limit = 365) {
     if (before) {
       const url = `https://www.okx.com/api/v5/market/history-candles?instId=${symbol}-USDT-SWAP&bar=1D&limit=${Math.min(limit - candles.length, 300)}&before=${before}`;
       try {
-        const res = await fetchWithTimeout(url, {
-          headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
-        }, 10000);
-        if (res.ok) {
+        const res = await fetchExchange(url);
+        if (res && res.ok) {
           const d = await res.json();
           if (d.code === '0' && d.data?.length) {
             const older = d.data.reverse().map(k => ({
@@ -195,10 +269,8 @@ async function fetchCryptoCandles(symbol, limit = 365) {
     if (end) {
       const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol}USDT&interval=D&limit=${Math.min(limit - candles.length, 200)}&end=${end}`;
       try {
-        const res = await fetchWithTimeout(url, {
-          headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
-        }, 10000);
-        if (res.ok) {
+        const res = await fetchExchange(url);
+        if (res && res.ok) {
           const d = await res.json();
           if (d.retCode === 0 && d.result?.list?.length) {
             const older = d.result.list.reverse().map(k => ({
@@ -232,23 +304,28 @@ export async function computeCryptoFactors(prevSnapshot, cryptoUniverse = null) 
     return null;
   }
 
-  // 2. Fetch candles (batched, 10 at a time — Promise.allSettled provides
-  // concurrency control; no artificial pause needed between batches).
-  // F-14-b-18 (2026-08-26): removed the 500ms × 20 batch pause (~10s saved
-  // per snapshot build). The previous batchSize=5 with 500ms pause between
-  // batches added ~10s of pure sleep per snapshot. Promise.allSettled already
-  // limits concurrency to batchSize at a time, and exchange APIs handle 10
-  // concurrent requests without rate-limit issues. batchSize bumped 5→10 to
-  // halve the number of sequential waves from 20 to 10.
-  const batchSize = 10;
+  // 2. Fetch candles (batched; the global pacer in fetchExchange bounds the
+  // request rate, so batchSize only controls how many symbol pipelines are
+  // in flight — not the requests-per-second the exchanges see).
+  // F-14-b-18 (2026-08-26) removed the inter-batch 500ms pause and bumped
+  // batchSize 5→10 (~10s saved per build). Revisit (2026-08-29): un-paced
+  // bursts tripped OKX/Bybit rate limits on CI runners, silently dropping
+  // ~35% of the universe (46-63 of ~94 fetchable assets per build). The
+  // paced + retried fetchExchange above is the real fix; batchSize is back
+  // at 5 to keep each wave's timeout/fallback fan-out small.
+  const batchSize = 5;
   const universe = [];
+  const dropped = [];
 
   for (let i = 0; i < topCoins.length; i += batchSize) {
     const batch = topCoins.slice(i, i + batchSize);
     const results = await Promise.allSettled(
       batch.map(async coin => {
         const candles = await fetchCryptoCandles(coin.symbol, 365);
-        if (!candles || candles.length < 60) return null;
+        if (!candles || candles.length < 60) {
+          dropped.push(coin.symbol);
+          return null;
+        }
         return {
           symbol: coin.symbol,
           candles,
@@ -271,6 +348,15 @@ export async function computeCryptoFactors(prevSnapshot, cryptoUniverse = null) 
       }
     }
     // No pause between batches — Promise.allSettled already throttles
+  }
+
+  // Visibility: after retries, remaining drops are genuine gaps (no USDT
+  // listing on OKX/Bybit, or <60d of history) — but they belong in the CI
+  // log, not in silent universe shrinkage. Cluster-size sanity follows:
+  // a healthy build drops ~5-8 of the filtered top-100; double digits mean
+  // something upstream changed.
+  if (dropped.length > 0) {
+    console.log(`  ⚠ ${dropped.length} assets dropped (no OKX/Bybit USDT listing or <60d history): ${dropped.join(', ')}`);
   }
 
   if (universe.length < 20) {
