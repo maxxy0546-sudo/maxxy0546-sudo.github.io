@@ -23,6 +23,26 @@ const FLIP_FRESH_SESSIONS = 10;   // flag stays visible for this many sessions
 /**
  * Detect leadership rotation from a history of daily classifications.
  *
+ * Audit (2026-08-29, "Factor Monitor always WAIT"): the previous flip logic
+ * was self-contradictory — `flipped` compared TODAY vs YESTERDAY, so it was
+ * only true on the literal day of the flip... but `confirmed` additionally
+ * required heldSessions >= 3, and heldSessions can only be 1 when today ≠
+ * yesterday. `confirmed` was therefore mathematically unreachable (always
+ * false), which made every "Rotation confirmed: X → Y" line dead UI and fed
+ * the always-WAIT stance chain.
+ *
+ * Correct semantics, as documented:
+ *   - `heldSessions`  — length of the current leader's trailing run.
+ *   - `flipped`       — the current leader took over from a DIFFERENT label
+ *                       at some point within the visible history (the
+ *                       displaced label is `previousLabel`).
+ *   - `confirmed`     — flipped AND current leader held >= CONFIRM_SESSIONS
+ *                       AND the displaced label had itself held >=
+ *                       CONFIRM_SESSIONS (i.e. it was established, so the
+ *                       takeover is meaningful, not noise).
+ *   - `flipFlag`      — a confirmed flip still within its fresh window
+ *                       (heldSessions <= FLIP_FRESH_SESSIONS).
+ *
  * @param {Array<{date: string, leader: string}|{date: string, quadrant: string}>} history
  *   - chronological, oldest first
  *   - one entry per session (day)
@@ -50,31 +70,31 @@ export function detectRotation(history) {
   const getLabel = (entry) => entry?.leader || entry?.quadrant || null;
 
   const today = history[history.length - 1];
-  const yesterday = history[history.length - 2];
-
   const currentLabel = getLabel(today);
-  const previousLabel = getLabel(yesterday);
-  const flipped = currentLabel !== previousLabel;
 
-  // Count how many consecutive sessions the current label has held
-  let heldSessions = 1;
-  for (let i = history.length - 2; i >= 0; i--) {
-    if (getLabel(history[i]) === currentLabel) heldSessions++;
-    else break;
-  }
+  // Walk back to the start of the current label's run.
+  let runStart = history.length - 1;
+  while (runStart > 0 && getLabel(history[runStart - 1]) === currentLabel) runStart--;
+  const heldSessions = history.length - runStart;
 
-  // Count how many sessions the PREVIOUS label held before being displaced
+  // The displaced label: what the current leader took over from (null when
+  // the current label has held for the entire visible history).
+  const displacedLabel = runStart > 0 ? getLabel(history[runStart - 1]) : null;
+  const flipped = displacedLabel != null && displacedLabel !== currentLabel;
+
+  // How long the displaced label had held before being displaced
   let previousHeldSessions = 0;
   if (flipped) {
-    for (let i = history.length - 2; i >= 0; i--) {
-      if (getLabel(history[i]) === previousLabel) previousHeldSessions++;
-      else break;
+    let i = runStart - 1;
+    while (i >= 0 && getLabel(history[i]) === displacedLabel) {
+      previousHeldSessions++;
+      i--;
     }
   }
 
   // Flip is confirmed only when:
   //   1. Current label has held >= CONFIRM_SESSIONS sessions
-  //   2. The displaced label was itself established for >= CONFIRM_SESSIONS sessions
+  //   2. The displaced label was itself established for >= CONFIRM_SESSIONS
   const confirmed = flipped
     && heldSessions >= CONFIRM_SESSIONS
     && previousHeldSessions >= CONFIRM_SESSIONS;
@@ -82,30 +102,15 @@ export function detectRotation(history) {
   // Flag stays "fresh" for FLIP_FRESH_SESSIONS after confirmation
   let flipFlag = false;
   let flipConfirmedAt = null;
-
   if (confirmed) {
-    flipFlag = true;
-    flipConfirmedAt = today.date;
-  } else if (flipped) {
-    // Walk back to find if there was a recent confirmed flip
-    for (let i = history.length - 1; i >= Math.max(0, history.length - FLIP_FRESH_SESSIONS); i--) {
-      const h = history[i];
-      const prevH = history[i - 1];
-      if (!prevH) continue;
-      if (getLabel(h) !== getLabel(prevH)) {
-        let heldFromFlip = 0;
-        for (let j = i; j < history.length; j++) {
-          if (getLabel(history[j]) === getLabel(h)) heldFromFlip++;
-          else break;
-        }
-        if (heldFromFlip >= CONFIRM_SESSIONS && heldFromFlip <= FLIP_FRESH_SESSIONS) {
-          flipFlag = true;
-          flipConfirmedAt = h.date;
-          break;
-        }
-      }
-    }
+    flipFlag = heldSessions <= FLIP_FRESH_SESSIONS;
+    flipConfirmedAt = history[runStart].date;  // first session of the new run
   }
+
+  // previousLabel: what the current leader displaced (for "X → Y" displays).
+  // Falls back to the current label when no flip is visible, so consumers
+  // rendering "previousLabel → currentLabel" never show a nonsensical pair.
+  const previousLabel = flipped ? displacedLabel : currentLabel;
 
   return {
     currentLabel,

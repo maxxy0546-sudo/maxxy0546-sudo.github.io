@@ -14,7 +14,8 @@ import { computeFactorScores, buildQuintilePortfolios, computeSpreadMonitor, det
 import { fetchCandlesBatch } from '@/lib/scanner/sourceResolver';
 import { fetchMarketData } from '@/lib/scanner/sources/coingecko';
 import { detectRotation, loadFactorHistory, saveFactorHistory, appendToHistory } from '@/lib/factors/rotationDetector';
-import { computeFactorStance } from '@/lib/factors/compositeEngine';
+import { computeFactorStance, pickPrimarySignal } from '@/lib/factors/compositeEngine';
+import { filterTradableUniverse } from '@/lib/factors/universeFilter';
 import { generateSignalCard } from '@/lib/factors/narrativeGenerator';
 import { buildCrowdingMatrix, extractSpreadSeries } from '@/lib/factors/crowdingMatrix';
 
@@ -115,6 +116,7 @@ export default function FactorMonitor() {
         // field already contains the full FactorStance shape (stance,
         // confidence, rationale, color, gates, raw) — no need to recompute.
         // This eliminates the drift between server and client stance logic.
+        /** @type {Record<string, import('@/lib/factors/compositeEngine').FactorStance>} */
         let stances = {};
         if (cf.stances) {
           // Server-computed stances — use directly.
@@ -151,8 +153,7 @@ export default function FactorMonitor() {
           }
         }
 
-        const primaryEntry = Object.entries(stances)
-          .sort(([,a], [,b]) => b.confidence - a.confidence)[0];
+        const primaryEntry = pickPrimarySignal(stances);
 
         if (!cancelled) {
           // F-14-b-6 (2026-08-26): record the snapshot's build timestamp so
@@ -175,8 +176,8 @@ export default function FactorMonitor() {
             quilt: cf.quilt || null,   // Server-side quilt (monthly returns heatmap) — added 2026-08-18
             stances,
             primarySignal: primaryEntry ? {
-              factorName: primaryEntry[0],
-              stance: primaryEntry[1],
+              factorName: primaryEntry.factorName,
+              stance: primaryEntry.stance,
               rotation: confirmedRotation,
             } : null,
             universeSize: cf.universe_size || 100,
@@ -200,12 +201,23 @@ export default function FactorMonitor() {
         setLoading(true);
         setError(null);
 
-        // 1. Fetch top 100 crypto by market cap
+        // 1. Fetch top 100 crypto by market cap.
+        // Audit (2026-08-29, "Factor Monitor always WAIT"): run the shared
+        // pegged-asset filter (stablecoins, tokenized gold, wrapped/staked
+        // derivatives, exchange revenue tokens) — the same filter the server
+        // applies in compute_crypto_factors.js — so the live-refresh universe
+        // matches the snapshot universe. Previously 9+ stablecoins sat in
+        // the quintile portfolios (e.g. "Low Volatility" Q1 was mostly
+        // stables+gold), corrupting every factor's spread.
         const marketData = await fetchMarketData([]);
-        const topSymbols = Object.entries(marketData)
-          .sort((a, b) => b[1].marketCap - a[1].marketCap)
+        const topSymbols = filterTradableUniverse(
+          Object.entries(marketData)
+            .sort((a, b) => b[1].marketCap - a[1].marketCap)
+            .slice(0, 120)
+            .map(([sym]) => ({ symbol: sym }))
+        )
           .slice(0, 100)
-          .map(([sym]) => sym);
+          .map(c => c.symbol);
 
         if (topSymbols.length < 10) {
           throw new Error('Not enough market data available');
@@ -325,6 +337,7 @@ export default function FactorMonitor() {
         const quilt = buildQuilt(portfoliosByFactor, candlesBySymbol);
 
         // 8e. Compute factor stances for all factors
+        /** @type {Record<string, import('@/lib/factors/compositeEngine').FactorStance>} */
         const stances = {};
         for (const row of Object.values(spreadMonitor)) {
           const spread20d = row.spread_20d || row.rel_20d || {};
@@ -338,12 +351,11 @@ export default function FactorMonitor() {
           stances[row.factor] = stance;
         }
 
-        // 8f. Find the primary signal (highest confidence)
-        const primaryFactor = Object.entries(stances)
-          .sort(([,a], [,b]) => b.confidence - a.confidence)[0];
-        const primarySignal = primaryFactor ? {
-          factorName: primaryFactor[0],
-          stance: primaryFactor[1],
+        // 8f. Find the primary signal (highest confidence, |z| tie-break)
+        const picked = pickPrimarySignal(stances);
+        const primarySignal = picked ? {
+          factorName: picked.factorName,
+          stance: picked.stance,
           rotation: confirmedRotation,
         } : null;
 

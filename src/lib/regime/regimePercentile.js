@@ -124,3 +124,96 @@ export function horizonReturnWithStats(prices, horizonDays, lookback = 252) {
 
   return { ret: currentRet, z, pctile };
 }
+
+/**
+ * Compute the h-day return of a LONG-SHORT (or long-benchmark) pair and its
+ * z-score + percentile vs trailing overlapping windows.
+ *
+ * Audit (2026-08-29, "Factor Monitor always WAIT"): the previous approach
+ * applied horizonReturnWithStats() to a *difference* series
+ * (longNorm − shortNorm), which starts at 0 and crosses zero. Dividing a
+ * change in that series by its near-zero level produced ±400%+ artifacts in
+ * the baseline (14% of one factor's baseline windows exceeded |300%|),
+ * inflating the trailing stdev and crushing every z-score below ~1.3 — so
+ * the |z| ≥ 2 stretch gate could essentially never fire and every factor
+ * stance resolved to WAIT.
+ *
+ * Correct definition: the h-day return of a long-short pair is the
+ * arithmetic return difference of the two legs:
+ *     pairRet_h(t) = A[t]/A[t−h] − B[t]/B[t−h]
+ * This is scale-free, never divides by a difference, and matches how the
+ * crowding matrix (extractSpreadSeries) already computes daily spread
+ * returns — the two definitions now agree.
+ *
+ * @param {number[]} seriesA - long leg price series (positive values, oldest first)
+ * @param {number[]} seriesB - short/benchmark leg price series (positive values)
+ * @param {number} horizonDays - 1, 5, 20, 60
+ * @param {number} [lookback=252] - how many overlapping windows to compare against
+ * @returns {{ret: number, z: number, pctile: number}|null}
+ */
+export function pairHorizonReturnWithStats(seriesA, seriesB, horizonDays, lookback = 252) {
+  if (!seriesA || !seriesB) return null;
+
+  // Align the two legs to the trailing minLen points (most recent dates),
+  // same alignment subtractSeries() used.
+  const minLen = Math.min(seriesA.length, seriesB.length);
+  if (minLen < horizonDays + 1) return null;
+  const a = seriesA.slice(seriesA.length - minLen);
+  const b = seriesB.slice(seriesB.length - minLen);
+
+  // Build the series of h-day pair returns, newest first.
+  const values = [];
+  for (let i = minLen - 1; i >= horizonDays; i--) {
+    const aPrev = a[i - horizonDays], bPrev = b[i - horizonDays];
+    if (!aPrev || !bPrev) continue;
+    values.push((a[i] / aPrev) - (b[i] / bPrev));
+    if (values.length >= lookback + 1) break;
+  }
+
+  if (values.length < 1) return null;
+
+  const current = values[0];          // newest window
+  const baseline = values.slice(1);   // historical windows
+
+  if (baseline.length < 10) {
+    return { ret: current, z: 0, pctile: 50 };
+  }
+
+  const mu = mean(baseline);
+  const sd = stddev(baseline, mu) || 1;
+  const z = (current - mu) / sd;
+  const pctile = percentileOf(current, baseline);
+
+  return { ret: current, z, pctile };
+}
+
+/**
+ * Year-to-date return for a long-short (or long-benchmark) pair.
+ * Uses the same arithmetic-difference definition as pairHorizonReturnWithStats:
+ *     pairYtd = A[end]/A[ytdStart] − B[end]/B[ytdStart]
+ *
+ * @param {number[]} seriesA - long leg (positive values, oldest first)
+ * @param {number[]} seriesB - short/benchmark leg
+ * @param {number} [endTs=Date.now()] - timestamp of the series' last point
+ *   (defaults to now; pass explicitly when testing historical series)
+ * @returns {number|null} YTD pair return, or null if either leg doesn't reach
+ *   back to the start of the year.
+ */
+export function pairYtdReturn(seriesA, seriesB, endTs = Date.now()) {
+  if (!seriesA || !seriesB) return null;
+  const minLen = Math.min(seriesA.length, seriesB.length);
+  if (minLen === 0) return null;
+  const a = seriesA.slice(seriesA.length - minLen);
+  const b = seriesB.slice(seriesB.length - minLen);
+
+  const currentYear = new Date(endTs).getFullYear();
+  const yearStart = Date.UTC(currentYear, 0, 1);
+  const daysSinceYearStart = Math.floor((endTs - yearStart) / 86400000);
+  // Need data from before Jan 1 on BOTH legs (5-day buffer)
+  if (minLen <= daysSinceYearStart + 5) return null;
+  const ytdStartIdx = minLen - 1 - daysSinceYearStart;
+
+  const aStart = a[ytdStartIdx], bStart = b[ytdStartIdx];
+  if (!aStart || !bStart || !a[minLen - 1] || !b[minLen - 1]) return null;
+  return (a[minLen - 1] / aStart) - (b[minLen - 1] / bStart);
+}

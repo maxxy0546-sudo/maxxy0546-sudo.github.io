@@ -21,7 +21,7 @@
  * then optionally live-refreshes for fresh data.
  */
 
-import { computeFactorScores, buildQuintilePortfolios, computeSpreadMonitor, detectFactorRotation, buildQuilt } from '../src/lib/scanner/factorEngine.js';
+import { computeFactorScores, buildQuintilePortfolios, computeSpreadMonitor, detectFactorRotation, buildQuilt, computeLeadershipHistory } from '../src/lib/scanner/factorEngine.js';
 import { detectRotation, appendToHistory } from '../src/lib/factors/rotationDetector.js';
 import { buildCrowdingMatrix, extractSpreadSeries } from '../src/lib/factors/crowdingMatrix.js';
 // F-14-b-6 + F-14-b-17 (2026-08-26): import the canonical computeFactorStance
@@ -32,6 +32,7 @@ import { buildCrowdingMatrix, extractSpreadSeries } from '../src/lib/factors/cro
 // the server's values — two implementations guaranteed to diverge. Now both
 // server and client use the same function, eliminating drift.
 import { computeFactorStance } from '../src/lib/factors/compositeEngine.js';
+import { filterTradableUniverse } from '../src/lib/factors/universeFilter.js';
 import { fetchWithTimeout } from '../src/lib/scanner/fetchWithTimeout.js';
 
 const FACTORS = ['momentum', 'size', 'volatility', 'beta', 'liquidity'];
@@ -41,30 +42,43 @@ const FACTORS = ['momentum', 'size', 'volatility', 'beta', 'liquidity'];
  * Primary: CMC crypto_universe (already fetched by build_snapshot.js, no extra API call).
  * Fallback: CoinGecko /coins/markets (may be rate-limited).
  *
+ * Audit (2026-08-29, "Factor Monitor always WAIT"): both paths now run
+ * filterTradableUniverse() to strip USD stablecoins, tokenized gold,
+ * wrapped/staked derivatives, and exchange revenue tokens before the
+ * universe is built. 12 pegged/native assets had been landing in the
+ * quintile portfolios — e.g. 9 stablecoins sat in the Low Volatility Q1,
+ * turning that factor into "alts vs stables" instead of a volatility bet.
+ * See src/lib/factors/universeFilter.js for the exclusion criteria.
+ *
  * @param {object} cryptoUniverse - The snapshot's crypto_universe object (from CMC).
  *   If provided, uses it instead of making a separate API call.
  */
 async function fetchTopCryptoByMcap(limit = 100, cryptoUniverse = null) {
-  // Primary: use CMC crypto_universe if provided (no extra API call)
+  // Primary: use CMC crypto_universe if provided (no extra API call).
+  // CMC entries carry `name` + `tags`, so both the tag-based and name-based
+  // exclusion layers in filterTradableUniverse are active on this path.
   if (cryptoUniverse && typeof cryptoUniverse === 'object') {
-    const coins = Object.values(cryptoUniverse)
-      .filter(c => c && c.symbol && c.marketCap > 0)
-      .sort((a, b) => (a.marketCapRank || 999) - (b.marketCapRank || 999))
-      .slice(0, limit)
+    const coins = filterTradableUniverse(
+      Object.values(cryptoUniverse)
+        .filter(c => c && c.symbol && c.marketCap > 0)
+        .sort((a, b) => (a.marketCapRank || 999) - (b.marketCapRank || 999))
+        .slice(0, limit + 25)  // over-fetch: filter removes ~10-15% of top-100
+    ).slice(0, limit)
       .map(c => ({
         symbol: c.symbol.toUpperCase(),
         marketCap: c.marketCap || 0,
         volume24h: c.volume24h || 0,
       }));
     if (coins.length >= 50) {
-      console.log(`  ✓ CMC crypto_universe: ${coins.length} coins (no extra API call)`);
+      console.log(`  ✓ CMC crypto_universe: ${coins.length} tradable coins after pegged-asset filter (no extra API call)`);
       return coins;
     }
-    console.log(`  ⚠ CMC crypto_universe only ${coins.length} coins, trying CoinGecko`);
+    console.log(`  ⚠ CMC crypto_universe only ${coins.length} tradable coins, trying CoinGecko`);
   }
 
-  // Fallback: CoinGecko /coins/markets
-  const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=' + limit + '&page=1&sparkline=false';
+  // Fallback: CoinGecko /coins/markets (keeps `name` so the name-based
+  // exclusion layer stays active on this path too)
+  const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=' + (limit + 25) + '&page=1&sparkline=false';
   try {
     const res = await fetchWithTimeout(url, {
       headers: { 'User-Agent': 'TrendScan-Snapshot/1.0' },
@@ -72,11 +86,15 @@ async function fetchTopCryptoByMcap(limit = 100, cryptoUniverse = null) {
     if (!res.ok) return [];
     const arr = await res.json();
     if (!Array.isArray(arr)) return [];
-    return arr.map(c => ({
+    return filterTradableUniverse(arr.map(c => ({
       symbol: (c.symbol || '').toUpperCase(),
+      name: c.name || '',
       marketCap: c.market_cap || 0,
       volume24h: c.total_volume || 0,
-    })).filter(c => c.symbol && c.marketCap > 0);
+    })))
+      .filter(c => c.symbol && c.marketCap > 0)
+      .slice(0, limit)
+      .map(c => ({ symbol: c.symbol, marketCap: c.marketCap, volume24h: c.volume24h }));
   } catch {
     return [];
   }
@@ -285,22 +303,62 @@ export async function computeCryptoFactors(prevSnapshot, cryptoUniverse = null) 
   const rotation = detectFactorRotation(portfoliosByFactor, candlesBySymbol);
   const today = new Date().toISOString().slice(0, 10);
 
-  // 8. Accumulate factor leadership history
-  let factorHistory = prevSnapshot?.crypto_factor_history || [];
+  // 8. Accumulate factor leadership history.
+  //
+  // (a) One-time purge: leader entries recorded before 2026-08-29 were
+  //     computed by the quintile-inverted buildQuintilePortfolios (audit
+  //     "Factor Monitor always WAIT") — the recorded "leader" was the factor
+  //     whose INVERTED (lowest-score) long book rallied hardest, which is
+  //     semantically wrong. Those entries are dropped so the corrected
+  //     pipeline doesn't inherit corrupt rotation state.
+  const QUINTILE_FIX_DATE = '2026-08-29';
+  let factorHistory = (prevSnapshot?.crypto_factor_history || [])
+    .filter(h => h.date > QUINTILE_FIX_DATE);
+
+  // (b) Backfill when the history is shorter than the rotation window: the
+  //     {date, leader} series is reconstructable from the year of candles we
+  //     already hold (computeLeadershipHistory uses current quintile
+  //     membership applied backwards — the same approximation the crowding
+  //     backfill makes). This makes rotation detection (heldSessions, 3-
+  //     session confirm) meaningful on day one instead of cold-starting for
+  //     weeks. Real post-fix entries (measured with each day's own data) take
+  //     precedence over backfilled values for their dates.
+  if (factorHistory.length < 90) {
+    const byDate = new Map(
+      computeLeadershipHistory(portfoliosByFactor, candlesBySymbol, 90)
+        .map(h => [h.date, h])
+    );
+    for (const h of factorHistory) byDate.set(h.date, h);  // real entries win
+    factorHistory = [...byDate.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .slice(-90)
+      .map(([date, h]) => ({ date, leader: h.leader }));
+  }
+
+  // (c) Append today's freshly-computed leader (no-op if today already exists)
   factorHistory = appendToHistory(factorHistory, today, rotation.leader_20d);
 
   // 9. Compute confirmed rotation from history
   const confirmedRotation = detectRotation(factorHistory);
 
-  // 10. Compute crowding matrix from live spread series
+  // 10. Compute live spread series from the 365d of candles we already have.
+  // Used below to (a) record today's daily spread return and (b) BACKFILL the
+  // accumulated spread history when it's shorter than the 90-day correlation
+  // window.
   const spreadSeries = extractSpreadSeries(portfoliosByFactor, candlesBySymbol, 90);
-  const crowding = buildCrowdingMatrix(spreadSeries, 90);
 
   // 11. Accumulate daily spread returns for server-side crowding history.
   // Each day we store the latest Q5-Q1 spread return per factor. This builds
   // a 90-day rolling series that can be used for correlation without needing
   // a live candle fetch — the crowding matrix renders instantly from snapshot.
-  let spreadHistory = prevSnapshot?.crypto_factor_spread_history || [];
+  //
+  // (a) One-time purge: entries before 2026-08-29 were computed with the
+  //     inverted quintiles (see step 8a) — their spread returns are the
+  //     negative-leg swap of the real factors. Dropping them lets the
+  //     backfill below rebuild the window with correct values.
+  const SPREAD_FIX_DATE = '2026-08-29';
+  let spreadHistory = (prevSnapshot?.crypto_factor_spread_history || [])
+    .filter(h => h.date > SPREAD_FIX_DATE);
   const todaySpread = { date: today };
   for (const factor of FACTORS) {
     const series = spreadSeries[factor] || [];
@@ -315,8 +373,55 @@ export async function computeCryptoFactors(prevSnapshot, cryptoUniverse = null) 
     }
   }
 
-  // 12. Build crowding matrix from accumulated history (server-side)
-  // This gives us a 90-day correlation matrix without needing live candles
+  // 11b. BACKFILL the spread history when it's shorter than the 90-day
+  // correlation window.
+  //
+  // Audit (2026-08-29, "Factor Monitor always WAIT"): this feature started
+  // accumulating crypto_factor_spread_history on 2026-08-26, so the history
+  // held only 4 daily entries — far below the 10-point minimum Pearson
+  // correlation needs — and the crowding matrix silently degraded to ALL
+  // ZEROS (displayed as "max corr 0.00 · not crowded" for every factor,
+  // which also made the crowding gate vacuously pass). The live spread
+  // series computed in step 10 spans ~90 daily returns from the same candle
+  // data; seeding the history with it makes the matrix meaningful on day
+  // one. Real accumulated entries (measured with each day's own quintile
+  // membership) take precedence over backfilled values for their dates, and
+  // as the window rolls the real entries gradually replace the backfill.
+  if (spreadHistory.length < 90) {
+    const backfill = {};  // date → {factor: daily spread return}
+    const now = Date.now();
+    for (const factor of FACTORS) {
+      const series = spreadSeries[factor] || [];
+      const n = Math.min(series.length, 90);
+      for (let i = 0; i < n; i++) {
+        const date = new Date(now - (n - 1 - i) * 86400000).toISOString().slice(0, 10);
+        (backfill[date] = backfill[date] || {})[factor] = series[series.length - n + i];
+      }
+    }
+    const byDate = {};  // date → merged entry (real values win per factor)
+    for (const [date, vals] of Object.entries(backfill)) {
+      byDate[date] = { date, ...vals };
+    }
+    for (const h of spreadHistory) {
+      const merged = { ...(byDate[h.date] || { date: h.date }) };
+      for (const f of FACTORS) {
+        if (h[f] != null) merged[f] = h[f];
+      }
+      merged.date = h.date;
+      byDate[h.date] = merged;
+    }
+    spreadHistory = Object.keys(byDate)
+      .sort()
+      .slice(-90)
+      .map(date => {
+        const e = { date };
+        for (const f of FACTORS) e[f] = byDate[date][f] ?? null;
+        return e;
+      });
+  }
+
+  // 12. Build crowding matrix from the (backfilled + accumulated) history.
+  // This gives us a 90-day correlation matrix without needing live candles.
   const historySpreadSeries = {};
   for (const factor of FACTORS) {
     historySpreadSeries[factor] = spreadHistory

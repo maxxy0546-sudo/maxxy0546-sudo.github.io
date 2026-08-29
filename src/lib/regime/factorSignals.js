@@ -60,14 +60,21 @@ export function computeFactorSignals(fwData, leaderHistory = []) {
   //   spreadZ      = momentum 5d σ (the factor's z-scored spread)
   //   spreadPctile = approximated from σ (σ=2 ≈ 97th pctile, σ=-2 ≈ 3rd)
   //   confirmation = revision spread / 100 (normalized to 0-1 scale)
-  //   rotation     = real rotation from server-side leader history
+  //   rotation     = real rotation from server-side leader history, scoped to
+  //                  the factor that actually leads (same pattern as the
+  //                  crypto Factor Monitor). Audit (2026-08-29): this was
+  //                  previously passed to BOTH factors unconditionally, so
+  //                  whichever factor led granted "persistence" to both.
+
+  const momentumRotation = fwRotation?.currentLabel === 'momentum' ? fwRotation : null;
+  const sizeRotation = fwRotation?.currentLabel === 'size' ? fwRotation : null;
 
   const momentumStance = computeFactorStance({
     spreadZ: spMomSigma5d,
     spreadPctile: spMomSigma5d != null
       ? Math.max(0.5, Math.min(99.5, 50 + spMomSigma5d * 15))
       : 50,
-    rotation: fwRotation,
+    rotation: momentumRotation,
     crowdingScore: null,  // FW crowding would need cross-factor correlation
     confirmation: spMomRevSpread != null
       ? Math.max(0, Math.min(1, spMomRevSpread / 100))
@@ -81,7 +88,7 @@ export function computeFactorSignals(fwData, leaderHistory = []) {
     spreadPctile: fwData.sp500.factors.size?.['5d_sigma'] != null
       ? Math.max(0.5, Math.min(99.5, 50 + fwData.sp500.factors.size['5d_sigma'] * 15))
       : 50,
-    rotation: fwRotation,
+    rotation: sizeRotation,
     crowdingScore: null,
     confirmation: sizeRevSpread != null
       ? Math.max(0, Math.min(1, Math.abs(sizeRevSpread) / 100))

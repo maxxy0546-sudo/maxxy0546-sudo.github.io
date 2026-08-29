@@ -22,6 +22,9 @@
 const STRETCH_THRESHOLD = 2.0;       // |z| >= 2 is a significant move
 const CROWDING_THRESHOLD = 0.7;      // corr > 0.7 means factors are "one bet"
 const CONFIRMATION_THRESHOLD = 0.5;  // >50% of quintile members confirming
+// Mirrors rotationDetector's CONFIRM_SESSIONS (3-session rule). Used when a
+// caller passes a rotation object without its own confirmSessions field.
+const CONFIRM_SESSIONS_DEFAULT = 3;
 
 const STANCE = {
   CONSTRUCTIVE: 'CONSTRUCTIVE',
@@ -50,6 +53,20 @@ const STANCE_COLORS = {
 /**
  * Compute a factor stance from z-scores, rotation state, and crowding.
  *
+ * Audit (2026-08-29, "Factor Monitor always WAIT"): the persistence gate
+ * previously read `rotation.confirmed` — which, due to a self-contradictory
+ * detectRotation() (see that file's audit note), was ALWAYS false, so the
+ * persistence gate could never pass and the stance chain could only reach
+ * WAIT for positive factors — the primary signal card was permanently stuck
+ * on WAIT.
+ *
+ * The correct semantics for "persistence": the factor's leadership is
+ * ESTABLISHED — it has held the lead for at least `confirmSessions`
+ * sessions (the 3-session rule), whether or not it got there via a flip.
+ * This is intentionally a weaker condition than detectRotation's
+ * `confirmed` (which additionally requires the DISPLACED leader to have
+ * been established — a flip-specific judgement).
+ *
  * @param {object} params
  * @param {number} params.spreadZ        - current spread z-score
  * @param {number} [params.spreadPctile] - percentile vs trailing window (0-100)
@@ -71,7 +88,12 @@ export function computeFactorStance({
   const absZ = Math.abs(z);
   const pctile = spreadPctile ?? 50;
   const crowded = (crowdingScore ?? 0) > CROWDING_THRESHOLD;
-  const confirmed = rotation?.confirmed ?? false;
+  // Persistence = established leadership: held the lead for >= the 3-session
+  // confirm rule (see docstring above). `rotation` is only passed by callers
+  // for the CURRENT leading factor, so non-leaders correctly get false.
+  const heldSessions = rotation?.heldSessions ?? 0;
+  const confirmSessions = rotation?.confirmSessions ?? CONFIRM_SESSIONS_DEFAULT;
+  const confirmed = heldSessions >= confirmSessions;
   const hasBreadth = (confirmation ?? 1) >= CONFIRMATION_THRESHOLD;
   const isPositive = z > 0;
 
@@ -88,15 +110,15 @@ export function computeFactorStance({
     rationale.push(`Neutral: z=${z.toFixed(1)} (${pctile.toFixed(0)}th pctile)`);
   }
 
-  // Gate 2: Persistence (rotation confirmed)
+  // Gate 2: Persistence (established leadership — 3-session rule)
   gates.persistence = confirmed;
   if (rotation) {
     if (confirmed) {
-      rationale.push(`Confirmed leader (${rotation.heldSessions} sessions)`);
+      rationale.push(`Established leader (${heldSessions} sessions)`);
     } else if (rotation.flipped) {
-      rationale.push(`Unconfirmed flip (${rotation.heldSessions} sessions, needs ${rotation.confirmSessions})`);
-    } else if (rotation.heldSessions > 0) {
-      rationale.push(`Leading for ${rotation.heldSessions} sessions`);
+      rationale.push(`New leader, unconfirmed (${heldSessions}/${confirmSessions} sessions)`);
+    } else if (heldSessions > 0) {
+      rationale.push(`Leading for ${heldSessions}/${confirmSessions} sessions`);
     }
   }
 
@@ -206,6 +228,29 @@ export function computeAllStances(spreadMonitorRows, rotation, crowdingMatrix) {
     primary: all[0] || null,
     all,
   };
+}
+
+/**
+ * Pick the primary signal from a {factor: FactorStance} map: the factor
+ * with the highest confidence, tie-broken by |spreadZ| (the more extreme
+ * reading wins) so the choice is deterministic and meaningful when several
+ * factors share a confidence score.
+ *
+ * Audit (2026-08-29): the previous inline sort only compared confidence, so
+ * ties fell through to object insertion order (always 'momentum'), which
+ * made the primary signal arbitrary on tie days.
+ *
+ * @param {Object<string, FactorStance>} stances
+ * @returns {{factorName: string, stance: FactorStance}|null}
+ */
+export function pickPrimarySignal(stances) {
+  const entries = Object.entries(stances || {});
+  if (entries.length === 0) return null;
+  entries.sort(([, a], [, b]) => {
+    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    return Math.abs(b.raw?.spreadZ ?? 0) - Math.abs(a.raw?.spreadZ ?? 0);
+  });
+  return { factorName: entries[0][0], stance: entries[0][1] };
 }
 
 export { STANCE, STANCE_COLORS, STRETCH_THRESHOLD, CROWDING_THRESHOLD };
