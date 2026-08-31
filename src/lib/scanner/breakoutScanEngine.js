@@ -1,4 +1,4 @@
-import { fetchCandles } from './exchanges';
+import { fetchCandles, fetchTop500 } from './exchanges';
 import { analyseBreakout } from './breakoutEngine';
 
 const TIMEFRAME_MAP = {
@@ -9,18 +9,15 @@ const TIMEFRAME_MAP = {
   '5y': '1w',
 };
 
-async function fetchBreakoutCandles(
-  symbol,
-  exchange,
-  timeframe
-) {
+async function fetchBreakoutCandles(symbol, exchange, timeframe) {
   let candles = await fetchCandles(
     symbol,
     exchange,
     timeframe
   );
 
-  // Same fallback behaviour as the existing TrendScan scanner.
+  // Use TrendScan's normal automatic fallback if
+  // the selected exchange cannot supply the candles.
   if ((!candles || candles.length < 2) && exchange !== 'auto') {
     candles = await fetchCandles(
       symbol,
@@ -32,15 +29,14 @@ async function fetchBreakoutCandles(
   return candles;
 }
 
-export async function analyseBreakoutAsset(
-  asset,
-  {
-    windowId = '1m',
-    exchange = 'auto',
-    approachingPct = 2,
-    breakingPct = 2,
-  } = {}
-) {
+async function analyseAsset(asset, options) {
+  const {
+    windowId,
+    exchange,
+    approachingPct,
+    breakingPct,
+  } = options;
+
   if (!asset?.symbol) return null;
 
   const timeframe =
@@ -75,38 +71,62 @@ export async function analyseBreakoutAsset(
       name: asset.name ?? asset.symbol,
       timeframe,
     };
-  } catch (error) {
+  } catch (err) {
     console.warn(
-      `[breakout] ${asset.symbol} failed:`,
-      error
+      `[breakout] ${asset.symbol} failed`,
+      err
     );
 
     return null;
   }
 }
 
-export async function runBreakoutScan(
-  assets,
-  {
-    windowId = '1m',
-    state = 'breaking',
-    exchange = 'auto',
-    approachingPct = 2,
-    breakingPct = 2,
-    concurrency = 6,
-    onProgress,
-  } = {}
-) {
-  if (!Array.isArray(assets) || !assets.length) {
-    return [];
-  }
+export async function runBreakoutScan(settings, onProgress) {
+  const startTime = Date.now();
 
+  const windowId =
+    settings.breakoutWindow ?? '1m';
+
+  const breakoutState =
+    settings.breakoutState ?? 'breaking';
+
+  const exchange =
+    settings.exchange ?? 'auto';
+
+  const approachingPct =
+    settings.approachingPct ?? 2;
+
+  const breakingPct =
+    settings.breakingPct ?? 2;
+
+  const concurrency = 6;
+
+  onProgress({
+    phase: 'fetching_universe',
+    done: 0,
+    total: 0,
+    matched: 0,
+    message: 'Fetching Top 500 for breakout scan…',
+  });
+
+  // Same universe used by the normal TrendScan scanner.
+  const assets = await fetchTop500(settings.cgKey);
+
+  const total = assets.length;
   const results = [];
+
+  onProgress({
+    phase: 'scanning',
+    done: 0,
+    total,
+    matched: 0,
+    results: [],
+    message: `Scanning ${total} assets for ${windowId.toUpperCase()} breakouts…`,
+  });
 
   let completed = 0;
 
-  // Work in small batches so we don't hammer the
-  // exchange APIs with hundreds of requests at once.
+  // Small batches avoid hammering exchange APIs.
   for (
     let i = 0;
     i < assets.length;
@@ -119,7 +139,7 @@ export async function runBreakoutScan(
 
     const batchResults = await Promise.all(
       batch.map(asset =>
-        analyseBreakoutAsset(asset, {
+        analyseAsset(asset, {
           windowId,
           exchange,
           approachingPct,
@@ -132,8 +152,8 @@ export async function runBreakoutScan(
       if (!result) continue;
 
       if (
-        state === 'all' ||
-        result.state === state
+        breakoutState === 'all' ||
+        result.state === breakoutState
       ) {
         results.push(result);
       }
@@ -141,22 +161,37 @@ export async function runBreakoutScan(
 
     completed += batch.length;
 
-    if (typeof onProgress === 'function') {
-      onProgress({
-        completed: Math.min(
-          completed,
-          assets.length
-        ),
-        total: assets.length,
-        matched: results.length,
-      });
-    }
+    // Closest to the breakout level first.
+    results.sort(
+      (a, b) =>
+        Math.abs(a.distancePct) -
+        Math.abs(b.distancePct)
+    );
+
+    onProgress({
+      phase: 'scanning',
+      done: Math.min(completed, total),
+      total,
+      matched: results.length,
+      results: [...results],
+      message:
+        `${Math.min(completed, total)}/${total} scanned · ` +
+        `${results.length} ${breakoutState} matches`,
+    });
   }
 
-  // Closest to the breakout level first.
-  return results.sort(
-    (a, b) =>
-      Math.abs(a.distancePct) -
-      Math.abs(b.distancePct)
-  );
+  const duration = Date.now() - startTime;
+
+  onProgress({
+    phase: 'complete',
+    done: total,
+    total,
+    matched: results.length,
+    results,
+    updatedAt: Date.now(),
+    duration,
+    message: `${results.length} breakout matches`,
+  });
+
+  return results;
 }
