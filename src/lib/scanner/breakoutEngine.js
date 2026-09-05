@@ -41,7 +41,8 @@ function normalizeCandle(candle) {
     };
   }
 
-  // Also supports object-based OHLC data
+  // Also supports object-based OHLC data. TrendScan's exchange sources use
+  // `vol`, while a few external/legacy shapes use `volume` or `v`.
   return {
     time: timestampToMs(
       candle.time ??
@@ -53,7 +54,7 @@ function normalizeCandle(candle) {
     high: Number(candle.high ?? candle.h),
     low: Number(candle.low ?? candle.l),
     close: Number(candle.close ?? candle.c),
-    volume: Number(candle.volume ?? candle.v ?? 0),
+    volume: Number(candle.volume ?? candle.vol ?? candle.v ?? 0),
   };
 }
 
