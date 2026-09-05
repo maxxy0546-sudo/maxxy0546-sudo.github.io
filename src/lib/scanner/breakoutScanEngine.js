@@ -2,28 +2,20 @@ import { fetchCandles, fetchTop500 } from './exchanges';
 import { analyseBreakout } from './breakoutEngine';
 
 const TIMEFRAME_MAP = {
-  local: '4h',
-  '1m': '4h',
-  '3m': '1d',
-  '1y': '1d',
-  '5y': '1w',
+  local: '4H',
+  '1m': '4H',
+  '3m': '1D',
+  '1y': '1W',
+  '5y': '1W',
 };
 
 async function fetchBreakoutCandles(symbol, exchange, timeframe) {
-  let candles = await fetchCandles(
-    symbol,
-    exchange,
-    timeframe
-  );
+  let candles = await fetchCandles(symbol, exchange, timeframe);
 
-  // Use TrendScan's normal automatic fallback if
-  // the selected exchange cannot supply the candles.
+  // Breakout scans use AUTO by default so the resolver can fall through
+  // OKX → Bybit → Kraken → Hyperliquid → Yahoo → Binance → CoinGecko.
   if ((!candles || candles.length < 2) && exchange !== 'auto') {
-    candles = await fetchCandles(
-      symbol,
-      'auto',
-      timeframe
-    );
+    candles = await fetchCandles(symbol, 'auto', timeframe);
   }
 
   return candles;
@@ -39,8 +31,7 @@ async function analyseAsset(asset, options) {
 
   if (!asset?.symbol) return null;
 
-  const timeframe =
-    TIMEFRAME_MAP[windowId] ?? '1d';
+  const timeframe = TIMEFRAME_MAP[windowId] ?? '1D';
 
   try {
     const candles = await fetchBreakoutCandles(
@@ -49,18 +40,12 @@ async function analyseAsset(asset, options) {
       timeframe
     );
 
-    if (!candles || candles.length < 2) {
-      return null;
-    }
+    if (!candles || candles.length < 2) return null;
 
-    const breakout = analyseBreakout(
-      candles,
-      windowId,
-      {
-        approachingPct,
-        breakingPct,
-      }
-    );
+    const breakout = analyseBreakout(candles, windowId, {
+      approachingPct,
+      breakingPct,
+    });
 
     if (!breakout) return null;
 
@@ -72,11 +57,7 @@ async function analyseAsset(asset, options) {
       timeframe,
     };
   } catch (err) {
-    console.warn(
-      `[breakout] ${asset.symbol} failed`,
-      err
-    );
-
+    console.warn(`[breakout] ${asset.symbol} failed`, err);
     return null;
   }
 }
@@ -84,21 +65,16 @@ async function analyseAsset(asset, options) {
 export async function runBreakoutScan(settings, onProgress) {
   const startTime = Date.now();
 
-  const windowId =
-    settings.breakoutWindow ?? '1m';
+  const windowId = settings.breakoutWindow ?? '1m';
+  const breakoutState = settings.breakoutState ?? 'breaking';
 
-  const breakoutState =
-    settings.breakoutState ?? 'breaking';
+  // Keep breakout data-source selection independent from the normal trend
+  // scanner. AUTO is important for long lookbacks because the resolver knows
+  // which sources support weekly/daily history and can fall back automatically.
+  const exchange = settings.breakoutExchange ?? 'auto';
 
-  const exchange =
-    settings.exchange ?? 'auto';
-
-  const approachingPct =
-    settings.approachingPct ?? 2;
-
-  const breakingPct =
-    settings.breakingPct ?? 2;
-
+  const approachingPct = settings.approachingPct ?? 2;
+  const breakingPct = settings.breakingPct ?? 2;
   const concurrency = 6;
 
   onProgress({
@@ -109,9 +85,8 @@ export async function runBreakoutScan(settings, onProgress) {
     message: 'Fetching Top 500 for breakout scan…',
   });
 
-  // Same universe used by the normal TrendScan scanner.
+  // Reuse the exact same filtered Top-500 universe as the normal scanner.
   const assets = await fetchTop500(settings.cgKey);
-
   const total = assets.length;
   const results = [];
 
@@ -126,16 +101,9 @@ export async function runBreakoutScan(settings, onProgress) {
 
   let completed = 0;
 
-  // Small batches avoid hammering exchange APIs.
-  for (
-    let i = 0;
-    i < assets.length;
-    i += concurrency
-  ) {
-    const batch = assets.slice(
-      i,
-      i + concurrency
-    );
+  // Small batches avoid hammering exchange APIs from the browser.
+  for (let i = 0; i < assets.length; i += concurrency) {
+    const batch = assets.slice(i, i + concurrency);
 
     const batchResults = await Promise.all(
       batch.map(asset =>
@@ -151,10 +119,7 @@ export async function runBreakoutScan(settings, onProgress) {
     for (const result of batchResults) {
       if (!result) continue;
 
-      if (
-        breakoutState === 'all' ||
-        result.state === breakoutState
-      ) {
+      if (breakoutState === 'all' || result.state === breakoutState) {
         results.push(result);
       }
     }
@@ -163,9 +128,7 @@ export async function runBreakoutScan(settings, onProgress) {
 
     // Closest to the breakout level first.
     results.sort(
-      (a, b) =>
-        Math.abs(a.distancePct) -
-        Math.abs(b.distancePct)
+      (a, b) => Math.abs(a.distancePct) - Math.abs(b.distancePct)
     );
 
     onProgress({
