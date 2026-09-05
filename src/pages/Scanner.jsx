@@ -3,12 +3,14 @@ import ScannerHeader from '@/components/scanner/ScannerHeader';
 import ScannerControls from '@/components/scanner/ScannerControls';
 import ProgressBar from '@/components/scanner/ProgressBar';
 import ResultsTable from '@/components/scanner/ResultsTable';
+import BreakoutResultsTable from '@/components/scanner/BreakoutResultsTable';
 import StatusBar from '@/components/scanner/StatusBar';
 import MassiveApiKeyInput from '@/components/scanner/MassiveApiKeyInput';
 import TradingViewChart from '@/components/scanner/TradingViewChart';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { runScan } from '@/lib/scanner/scanEngine';
 import { runTradFiScan } from '@/lib/scanner/tradfiScanEngine';
+import { runBreakoutScan } from '@/lib/scanner/breakoutScanEngine';
 
 const STORAGE_KEY = 'trendscan_scanner_settings';
 
@@ -51,6 +53,21 @@ const DEFAULT_SETTINGS = {
   maxSupplyFilter: 0,            // minimum max supply (filters out inflationary coins with null maxSupply)
 };
 
+const BREAKOUT_WINDOWS = [
+  { id: 'local', label: 'LOCAL' },
+  { id: '1m', label: '1M' },
+  { id: '3m', label: '3M' },
+  { id: '1y', label: '1Y' },
+  { id: '5y', label: '5Y' },
+];
+
+const BREAKOUT_STATES = [
+  { id: 'approaching', label: 'Approaching' },
+  { id: 'breaking', label: 'Breaking' },
+  { id: 'extended', label: 'Extended' },
+  { id: 'all', label: 'All' },
+];
+
 export default function Scanner() {
   const [settings, setSettings] = useState(() => {
     try {
@@ -67,6 +84,12 @@ export default function Scanner() {
   const [isScanning, setIsScanning] = useState(false);
   const [status, setStatus] = useState('idle');
   const [progress, setProgress] = useState({ done: 0, total: 0, matched: 0, message: '—' });
+  const [scannerView, setScannerView] = useState('scanner');
+  const [breakoutWindow, setBreakoutWindow] = useState('1m');
+  const [breakoutState, setBreakoutState] = useState('breaking');
+  const [breakoutResults, setBreakoutResults] = useState([]);
+  const [breakoutMeta, setBreakoutMeta] = useState({ updatedAt: null, duration: null });
+
   // Results are stored per-mode so switching Crypto↔TradFi preserves each mode's results
   const [cryptoResults, setCryptoResults] = useState(() => {
     try {
@@ -103,22 +126,29 @@ export default function Scanner() {
 
   // Active results/meta are derived from the current mode
   const isTradFiMode = settings.mode === 'tradfi';
-  const results = isTradFiMode ? tradfiResults : cryptoResults;
-  const scanMeta = isTradFiMode ? tradfiMeta : cryptoMeta;
+  const results = scannerView === 'breakout'
+    ? breakoutResults
+    : (isTradFiMode ? tradfiResults : cryptoResults);
+  const scanMeta = scannerView === 'breakout'
+    ? breakoutMeta
+    : (isTradFiMode ? tradfiMeta : cryptoMeta);
 
-  // Refs to hold the current mode's setters so handleProgress (which has []
-  // deps for stable identity) can always write to the correct mode's state
+  // Refs to hold the current result/meta setters so handleProgress (which has []
+  // deps for stable identity) can always write to the correct state.
   const setResultsRef = useRef(setCryptoResults);
   const setScanMetaRef = useRef(setCryptoMeta);
   useEffect(() => {
-    if (isTradFiMode) {
+    if (scannerView === 'breakout') {
+      setResultsRef.current = setBreakoutResults;
+      setScanMetaRef.current = setBreakoutMeta;
+    } else if (isTradFiMode) {
       setResultsRef.current = setTradfiResults;
       setScanMetaRef.current = setTradfiMeta;
     } else {
       setResultsRef.current = setCryptoResults;
       setScanMetaRef.current = setCryptoMeta;
     }
-  }, [isTradFiMode, setTradfiResults, setCryptoResults, setTradfiMeta, setCryptoMeta]);
+  }, [scannerView, isTradFiMode]);
 
   // Persist results to sessionStorage whenever they change
   useEffect(() => {
@@ -194,12 +224,23 @@ export default function Scanner() {
     if (isScanning) return;
     setIsScanning(true);
     setError(null);
-    setResultsRef.current([]);  // clear only the active mode's results
+    setResultsRef.current([]);  // clear only the active view's results
     setProgress({ done: 0, total: 0, matched: 0, message: '—' });
 
     try {
-      const scanFn = settings.mode === 'tradfi' ? runTradFiScan : runScan;
-      await scanFn(settings, handleProgress);
+      if (scannerView === 'breakout') {
+        await runBreakoutScan(
+          {
+            ...settings,
+            breakoutWindow,
+            breakoutState,
+          },
+          handleProgress
+        );
+      } else {
+        const scanFn = settings.mode === 'tradfi' ? runTradFiScan : runScan;
+        await scanFn(settings, handleProgress);
+      }
     } catch (err) {
       setStatus('error');
       setError(err.message);
@@ -207,7 +248,7 @@ export default function Scanner() {
     } finally {
       setIsScanning(false);
     }
-  }, [settings, isScanning, handleProgress]);
+  }, [settings, scannerView, breakoutWindow, breakoutState, isScanning, handleProgress]);
 
   // Mode toggle: swap between crypto and tradfi. Also swaps the exchange/source
   // to a sensible default for the new mode so the user doesn't get stuck with
@@ -215,19 +256,25 @@ export default function Scanner() {
   // Results are stored per-mode so switching preserves each mode's results.
   // Switching is blocked while a scan is in progress to prevent freeze.
   const handleModeChange = useCallback((newMode) => {
-    if (isScanning) return;  // prevent mode switch during active scan
+    if (isScanning || scannerView === 'breakout') return;
     setSettings(prev => {
-      if (prev.mode === newMode) return prev;  // no-op if same mode
+      if (prev.mode === newMode) return prev;
       const newExchange = newMode === 'tradfi' ? 'auto' : 'okx_perps';
       return { ...prev, mode: newMode, exchange: newExchange };
     });
-    // Reset progress display but DON'T clear results — they're per-mode now
     setStatus('idle');
     setProgress({ done: 0, total: 0, matched: 0, message: '—' });
     setSelectedRow(null);
-  }, [isScanning]);
+  }, [isScanning, scannerView]);
 
-  // No auto-scan — wait for manual user trigger
+  const handleScannerViewChange = useCallback((view) => {
+    if (isScanning || view === scannerView) return;
+    setScannerView(view);
+    setStatus('idle');
+    setProgress({ done: 0, total: 0, matched: 0, message: '—' });
+    setError(null);
+    setSelectedRow(null);
+  }, [isScanning, scannerView]);
 
   return (
     <div
@@ -238,12 +285,103 @@ export default function Scanner() {
       }}
     >
       <ScannerHeader settings={settings} scanMeta={scanMeta} onModeChange={handleModeChange} />
-      <ScannerControls
-        settings={settings}
-        onSettingsChange={setSettings}
-        isScanning={isScanning}
-        onScan={startScan}
-      />
+
+      <div
+        className="px-5 md:px-8 py-3 flex flex-wrap items-center gap-2"
+        style={{
+          background: 'var(--scanner-bg1)',
+          borderBottom: '1px solid var(--scanner-border2)'
+        }}
+      >
+        <div className="flex items-center overflow-hidden" style={{ border: '1px solid var(--scanner-border2)' }}>
+          {[
+            ['scanner', 'SCREENER'],
+            ['breakout', 'BREAKOUTS'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => handleScannerViewChange(id)}
+              disabled={isScanning}
+              className="font-mono text-[10px] font-bold tracking-[0.12em] px-3 py-2"
+              style={{
+                border: 'none',
+                cursor: isScanning ? 'not-allowed' : 'pointer',
+                background: scannerView === id ? 'rgba(245,158,11,0.15)' : 'transparent',
+                color: scannerView === id ? 'var(--scanner-accent)' : 'var(--scanner-text3)'
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {scannerView === 'breakout' && (
+          <>
+            <div className="flex items-center overflow-hidden" style={{ border: '1px solid var(--scanner-border2)' }}>
+              {BREAKOUT_WINDOWS.map(window => (
+                <button
+                  key={window.id}
+                  onClick={() => setBreakoutWindow(window.id)}
+                  disabled={isScanning}
+                  className="font-mono text-[9px] font-bold tracking-wide px-2.5 py-2"
+                  style={{
+                    border: 'none',
+                    cursor: isScanning ? 'not-allowed' : 'pointer',
+                    background: breakoutWindow === window.id ? 'rgba(34,211,238,0.12)' : 'transparent',
+                    color: breakoutWindow === window.id ? 'var(--scanner-cyan)' : 'var(--scanner-text3)'
+                  }}
+                >
+                  {window.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center overflow-hidden" style={{ border: '1px solid var(--scanner-border2)' }}>
+              {BREAKOUT_STATES.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => setBreakoutState(item.id)}
+                  disabled={isScanning}
+                  className="font-mono text-[9px] font-bold tracking-wide px-2.5 py-2"
+                  style={{
+                    border: 'none',
+                    cursor: isScanning ? 'not-allowed' : 'pointer',
+                    background: breakoutState === item.id ? 'rgba(217,70,239,0.12)' : 'transparent',
+                    color: breakoutState === item.id ? 'var(--scanner-magenta)' : 'var(--scanner-text3)'
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={startScan}
+              disabled={isScanning}
+              className="font-mono text-[10px] font-bold tracking-[0.12em] px-4 py-2"
+              style={{
+                border: '1px solid var(--scanner-accent)',
+                background: 'rgba(245,158,11,0.12)',
+                color: 'var(--scanner-accent)',
+                cursor: isScanning ? 'not-allowed' : 'pointer',
+                opacity: isScanning ? 0.6 : 1,
+              }}
+            >
+              {isScanning ? 'SCANNING…' : 'RUN BREAKOUT SCAN'}
+            </button>
+          </>
+        )}
+      </div>
+
+      {scannerView === 'scanner' && (
+        <ScannerControls
+          settings={settings}
+          onSettingsChange={setSettings}
+          isScanning={isScanning}
+          onScan={startScan}
+        />
+      )}
+
       <ProgressBar progress={progress} status={status} />
 
       {error && (
@@ -256,8 +394,23 @@ export default function Scanner() {
         </div>
       )}
 
-      <ResultsTable results={results} settings={settings} isScanning={isScanning} hasScanned={status !== 'idle'} onSelectRow={setSelectedRow} />
-      <StatusBar settings={settings} />
+      {scannerView === 'breakout' ? (
+        <BreakoutResultsTable
+          results={breakoutResults}
+          isScanning={isScanning}
+          hasScanned={status !== 'idle'}
+        />
+      ) : (
+        <ResultsTable
+          results={results}
+          settings={settings}
+          isScanning={isScanning}
+          hasScanned={status !== 'idle'}
+          onSelectRow={setSelectedRow}
+        />
+      )}
+
+      {scannerView === 'scanner' && <StatusBar settings={settings} />}
 
       {showApiKeyModal && (
         <MassiveApiKeyInput onClose={() => setShowApiKeyModal(false)} />
