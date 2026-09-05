@@ -5,6 +5,7 @@ on:
     branches: [Breakout]
     paths:
       - 'src/**'
+      - 'scripts/breakout/**'
       - 'package.json'
       - 'package-lock.json'
       - 'vite.config.js'
@@ -29,6 +30,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Breakout unit tests
+        run: node --test scripts/breakout/breakoutEngine.test.js
 
       - name: Typecheck
         run: npm run typecheck
