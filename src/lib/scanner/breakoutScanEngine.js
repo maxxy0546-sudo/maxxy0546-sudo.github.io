@@ -1,5 +1,5 @@
 import { fetchCandles, fetchTop500 } from './exchanges';
-import { analyseBreakout } from './breakoutEngine';
+import { analyseBreakout, BREAKOUT_STATES } from './breakoutEngine';
 
 const TIMEFRAME_MAP = {
   local: '4H',
@@ -62,6 +62,14 @@ async function analyseAsset(asset, options) {
   }
 }
 
+function matchesSelectedState(result, breakoutState) {
+  if (breakoutState === 'all') {
+    // "All" means all breakout-relevant states, not every coin in the universe.
+    return result.state !== BREAKOUT_STATES.BELOW;
+  }
+  return result.state === breakoutState;
+}
+
 export async function runBreakoutScan(settings, onProgress) {
   const startTime = Date.now();
 
@@ -118,10 +126,7 @@ export async function runBreakoutScan(settings, onProgress) {
 
     for (const result of batchResults) {
       if (!result) continue;
-
-      if (breakoutState === 'all' || result.state === breakoutState) {
-        results.push(result);
-      }
+      if (matchesSelectedState(result, breakoutState)) results.push(result);
     }
 
     completed += batch.length;
