@@ -27,9 +27,13 @@ function PageLoader() {
 }
 
 function App() {
+  const routerBase = import.meta.env.BASE_URL === '/'
+    ? '/'
+    : import.meta.env.BASE_URL.replace(/\/$/, '');
+
   return (
     <QueryClientProvider client={queryClientInstance}>
-      <Router>
+      <Router basename={routerBase}>
         <SpaAwareRedirect />
         <NavBar />
         <Suspense fallback={<PageLoader />}>
